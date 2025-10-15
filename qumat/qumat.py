@@ -27,9 +27,11 @@ class QuMat:
         self.backend = self.backend_module.initialize_backend(backend_config)
         self.circuit = None
         self.parameters = {}
+        self.num_qubits = None
 
     def create_empty_circuit(self, num_qubits: int | None = None):
         self.circuit = self.backend_module.create_empty_circuit(num_qubits)
+        self.num_qubits = num_qubits
 
     def apply_not_gate(self, qubit_index):
         self.backend_module.apply_not_gate(self.circuit, qubit_index)
@@ -69,6 +71,13 @@ class QuMat:
         self.backend_module.apply_pauli_z_gate(self.circuit, qubit_index)
 
     def execute_circuit(self, parameter_values=None):
+        if self.num_qubits == 0:
+            shots = self.backend_config["backend_options"].get("shots", 1)
+            if self.backend_name == "cirq":
+                return [{0: shots}]
+            else:
+                return {"": shots}
+
         if parameter_values:
             self.bind_parameters(parameter_values)
         self.backend_config["parameter_values"] = self.parameters  # Pass parameters
