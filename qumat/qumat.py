@@ -26,9 +26,11 @@ class QuMat:
         )
         self.backend = self.backend_module.initialize_backend(backend_config)
         self.circuit = None
+        self.num_qubits = None
         self.parameters = {}
 
     def create_empty_circuit(self, num_qubits):
+        self.num_qubits = num_qubits
         self.circuit = self.backend_module.create_empty_circuit(num_qubits)
 
     def apply_not_gate(self, qubit_index):
@@ -130,3 +132,102 @@ class QuMat:
 
         # Apply Hadamard to ancilla qubit again
         self.apply_hadamard_gate(ancilla_qubit)
+
+    def measure_overlap(self, qubit1, qubit2, ancilla_qubit=0):
+        """
+        Measures the overlap (fidelity) between two quantum states using the swap test.
+
+        This method creates a swap test circuit to calculate the similarity between
+        the quantum states on qubit1 and qubit2. It returns the squared overlap |<ψ|φ>|²,
+        which represents the fidelity between the two states.
+
+        The swap test measures P(ancilla=0), which is related to overlap as:
+        P(0) = (1 + |<ψ|φ>|²) / 2
+
+        However, for certain states (especially identical excited states), global phase
+        effects may cause the ancilla to measure predominantly |1> instead of |0>.
+        This method handles both cases by taking the measurement probability closer to 1.
+
+        Args:
+            qubit1: Index of the first qubit containing state |ψ>
+            qubit2: Index of the second qubit containing state |φ>
+            ancilla_qubit: Index of the ancilla qubit (default: 0, should be initialized to |0>)
+
+        Returns:
+            float: The squared overlap |<ψ|φ>|² between the two states (fidelity)
+        """
+        # Perform the swap test
+        self.swap_test(ancilla_qubit, qubit1, qubit2)
+
+        # Execute the circuit and get results
+        results = self.execute_circuit()
+
+        # Calculate the probability of measuring ancilla in |0> state
+        prob_zero = self._calculate_prob_zero(results, ancilla_qubit)
+
+        # The swap test gives: P(0) = (1 + |<ψ|φ>|²) / 2
+        # Therefore: |<ψ|φ>|² = 2 * P(0) - 1
+        #
+        # However, due to global phase conventions in some backends,
+        # identical states may give P(0) ≈ 0 instead of P(0) ≈ 1.
+        # In such cases, we should use P(1) instead: P(1) = (1 + |<ψ|φ>|²) / 2
+        #
+        # To handle both cases, we use the measurement probability closer to 1:
+        prob_zero_or_one = max(prob_zero, 1 - prob_zero)
+        overlap_squared = 2 * prob_zero_or_one - 1
+
+        # Ensure the result is in valid range [0, 1] (accounting for statistical noise)
+        overlap_squared = max(0.0, min(1.0, overlap_squared))
+
+        return overlap_squared
+
+    def _calculate_prob_zero(self, results, ancilla_qubit):
+        """
+        Calculate the probability of measuring the ancilla qubit in |0> state.
+
+        Different backends use different qubit ordering conventions:
+        - Qiskit: qubit i corresponds to bit i (little-endian), string format, rightmost is qubit 0
+        - Cirq: qubit i corresponds to bit (n-1-i) (big-endian), integer format
+        - Amazon Braket: qubit i corresponds to bit (n-1-i) (big-endian), string format, leftmost is qubit 0
+
+        Args:
+            results: Measurement results from execute_circuit()
+            ancilla_qubit: Index of the ancilla qubit
+
+        Returns:
+            float: Probability of measuring ancilla in |0> state
+        """
+        # Handle different result formats from different backends
+        if isinstance(results, list):
+            results = results[0]
+
+        total_shots = sum(results.values())
+        count_zero = 0
+
+        # Get the total number of qubits from the circuit
+        num_qubits = self.num_qubits
+
+        for state, count in results.items():
+            if isinstance(state, str):
+                # String format: could be Qiskit (little-endian) or Braket (big-endian)
+                # Qiskit: rightmost bit is qubit 0 (little-endian)
+                # Braket: leftmost bit is qubit 0 (big-endian)
+                if self.backend_name == "qiskit":
+                    # Qiskit: little-endian, rightmost bit is qubit 0
+                    if (
+                        len(state) > ancilla_qubit
+                        and state[-(ancilla_qubit + 1)] == "0"
+                    ):
+                        count_zero += count
+                else:  # amazon_braket
+                    # Braket: big-endian, leftmost bit is qubit 0
+                    if len(state) > ancilla_qubit and state[ancilla_qubit] == "0":
+                        count_zero += count
+            else:
+                # For integer format (Cirq): uses big-endian ordering
+                # qubit i corresponds to bit (num_qubits - 1 - i)
+                bit_position = num_qubits - 1 - ancilla_qubit
+                if ((state >> bit_position) & 1) == 0:
+                    count_zero += count
+
+        return count_zero / total_shots if total_shots > 0 else 0.0

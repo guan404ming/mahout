@@ -34,7 +34,13 @@ def initialize_backend(backend_config):
 
 
 def create_empty_circuit(num_qubits):
-    return Circuit()
+    # Create a circuit and ensure all qubits exist by adding identity gates
+    # This ensures consistent qubit ordering in measurements
+    circuit = Circuit()
+    # Add identity gates to all qubits to register them in the circuit
+    for i in range(num_qubits):
+        circuit.i(i)
+    return circuit
 
 
 def apply_not_gate(circuit, qubit_index):

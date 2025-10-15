@@ -32,7 +32,14 @@ def initialize_backend(backend_config):
 
 
 def create_empty_circuit(num_qubits):
-    return cirq.Circuit()
+    # Create a circuit and ensure all qubits exist by adding identity gates
+    # This ensures consistent qubit ordering in measurements
+    circuit = cirq.Circuit()
+    qubits = [cirq.LineQubit(i) for i in range(num_qubits)]
+    # Add identity gates to all qubits to register them in the circuit
+    for qubit in qubits:
+        circuit.append(cirq.I(qubit))
+    return circuit
 
 
 def apply_not_gate(circuit, qubit_index):
