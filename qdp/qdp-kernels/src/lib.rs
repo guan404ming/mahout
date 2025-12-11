@@ -39,32 +39,37 @@ unsafe impl cudarc::driver::ValidAsZeroBits for CuDoubleComplex {}
 // CUDA kernel FFI (Linux only, dummy on other platforms)
 #[cfg(target_os = "linux")]
 unsafe extern "C" {
-    /// Launch amplitude encoding kernel
+    /// Launch paged amplitude encoding kernel
     /// Returns CUDA error code (0 = success)
     ///
     /// # Safety
     /// Requires valid GPU pointers, must sync before freeing
     pub fn launch_amplitude_encode(
         input_d: *const f64,
-        state_d: *mut c_void,
+        page_table_d: *mut *mut c_void,
         input_len: usize,
         state_len: usize,
+        state_offset: usize,
+        page_size: usize,
+        page_shift: u32,
         norm: f64,
         stream: *mut c_void,
     ) -> i32;
 
-    /// Launch batch amplitude encoding kernel
+    /// Launch paged batch amplitude encoding kernel
     /// Returns CUDA error code (0 = success)
     ///
     /// # Safety
     /// Requires valid GPU pointers, must sync before freeing
     pub fn launch_amplitude_encode_batch(
         input_batch_d: *const f64,
-        state_batch_d: *mut c_void,
+        page_table_d: *mut *mut c_void,
         inv_norms_d: *const f64,
         num_samples: usize,
         input_len: usize,
         state_len: usize,
+        page_size: usize,
+        page_shift: u32,
         stream: *mut c_void,
     ) -> i32;
 
@@ -76,10 +81,29 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 pub extern "C" fn launch_amplitude_encode(
     _input_d: *const f64,
-    _state_d: *mut c_void,
+    _page_table_d: *mut *mut c_void,
     _input_len: usize,
     _state_len: usize,
+    _state_offset: usize,
+    _page_size: usize,
+    _page_shift: u32,
     _norm: f64,
+    _stream: *mut c_void,
+) -> i32 {
+    999 // Error: CUDA unavailable
+}
+
+#[cfg(not(target_os = "linux"))]
+#[unsafe(no_mangle)]
+pub extern "C" fn launch_amplitude_encode_batch(
+    _input_batch_d: *const f64,
+    _page_table_d: *mut *mut c_void,
+    _inv_norms_d: *const f64,
+    _num_samples: usize,
+    _input_len: usize,
+    _state_len: usize,
+    _page_size: usize,
+    _page_shift: u32,
     _stream: *mut c_void,
 ) -> i32 {
     999 // Error: CUDA unavailable

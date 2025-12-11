@@ -116,10 +116,25 @@ impl GpuStateVector {
     ///
     /// Returns raw pointer for torch.from_dlpack() (zero-copy, GPU memory).
     ///
+    /// # Panics
+    /// Panics if the state vector spans multiple pages. DLPack requires contiguous
+    /// memory, which is only available for single-page state vectors.
+    /// Use `is_single_page()` to check before calling.
+    ///
     /// # Safety
     /// Freed by DLPack deleter when PyTorch releases tensor.
     /// Do not free manually.
     pub fn to_dlpack(&self) -> *mut DLManagedTensor {
+        // DLPack requires contiguous memory - only supported for single-page vectors
+        assert!(
+            self.is_single_page(),
+            "DLPack export requires single-page state vector. State has {} pages ({} elements, page size {}). \
+             Reduce qubits or increase page size.",
+            self.num_pages,
+            self.size_elements,
+            self.page_size_elements
+        );
+
         // Allocate shape/strides on heap (freed by deleter)
         let shape = vec![self.size_elements as i64];
         let strides = vec![1i64];
@@ -128,8 +143,8 @@ impl GpuStateVector {
         let shape_ptr = Box::into_raw(shape.into_boxed_slice()) as *mut i64;
         let strides_ptr = Box::into_raw(strides.into_boxed_slice()) as *mut i64;
 
-        // Increment Arc ref count (decremented in deleter)
-        let ctx = Arc::into_raw(self.buffer.clone()) as *mut c_void;
+        // Increment Arc ref count for the first (only) page (decremented in deleter)
+        let ctx = Arc::into_raw(self.pages[0].clone()) as *mut c_void;
 
         let tensor = DLTensor {
             data: self.ptr() as *mut c_void,
@@ -155,5 +170,17 @@ impl GpuStateVector {
         };
 
         Box::into_raw(Box::new(managed))
+    }
+
+    /// Try to convert to DLPack format, returning None for multi-page vectors
+    ///
+    /// Use this instead of `to_dlpack()` when you need to handle multi-page
+    /// vectors gracefully without panicking.
+    pub fn try_to_dlpack(&self) -> Option<*mut DLManagedTensor> {
+        if self.is_single_page() {
+            Some(self.to_dlpack())
+        } else {
+            None
+        }
     }
 }

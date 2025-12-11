@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Tests for amplitude encoding CUDA kernel
+// Tests for amplitude encoding CUDA kernel (paged memory version)
 
 #[cfg(target_os = "linux")]
 use cudarc::driver::{CudaDevice, DevicePtr, DevicePtrMut};
@@ -22,6 +22,26 @@ use cudarc::driver::{CudaDevice, DevicePtr, DevicePtrMut};
 use qdp_kernels::{CuDoubleComplex, launch_amplitude_encode};
 
 const EPSILON: f64 = 1e-10;
+
+/// Helper to create a single-page page table for testing
+/// Returns (state buffer, page table buffer)
+#[cfg(target_os = "linux")]
+fn create_single_page_state(
+    device: &std::sync::Arc<CudaDevice>,
+    state_len: usize,
+) -> (
+    cudarc::driver::CudaSlice<CuDoubleComplex>,
+    cudarc::driver::CudaSlice<u64>,
+) {
+    // Allocate state buffer
+    let state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+
+    // Get pointer and create page table with single entry
+    let state_ptr = *state_d.device_ptr() as u64;
+    let page_table = device.htod_copy(vec![state_ptr]).unwrap();
+
+    (state_d, page_table)
+}
 
 #[test]
 #[cfg(target_os = "linux")]
@@ -44,15 +64,18 @@ fn test_amplitude_encode_basic() {
 
     // Allocate device memory
     let input_d = device.htod_copy(input.clone()).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
 
-    // Launch kernel
+    // Launch kernel with paged API
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             input.len(),
             state_len,
+            0, // state_offset
+            state_len, // page_size (single page covers all)
+            (state_len as f64).log2() as u32, // page_shift
             norm,
             std::ptr::null_mut(),
         )
@@ -112,14 +135,17 @@ fn test_amplitude_encode_power_of_two() {
     let state_len = 8;
 
     let input_d = device.htod_copy(input.clone()).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             input.len(),
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -171,14 +197,17 @@ fn test_amplitude_encode_odd_input_length() {
     let state_len = 4;
 
     let input_d = device.htod_copy(input.clone()).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             input.len(),
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -220,14 +249,17 @@ fn test_amplitude_encode_large_state() {
     let state_len = 1024;
 
     let input_d = device.htod_copy(input.clone()).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             input.len(),
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -275,14 +307,18 @@ fn test_amplitude_encode_zero_norm_error() {
     let state_len = 4;
 
     let input_d = device.htod_copy(input).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
+    let _ = state_d; // suppress unused warning
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             3,
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -314,14 +350,18 @@ fn test_amplitude_encode_negative_norm_error() {
     let state_len = 4;
 
     let input_d = device.htod_copy(input).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
+    let _ = state_d;
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             3,
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -354,14 +394,17 @@ fn test_amplitude_encode_vectorized_load() {
     let state_len = 16;
 
     let input_d = device.htod_copy(input.clone()).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             input.len(),
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -405,14 +448,17 @@ fn test_amplitude_encode_small_input_large_state() {
     let state_len = 16;
 
     let input_d = device.htod_copy(input.clone()).unwrap();
-    let mut state_d = device.alloc_zeros::<CuDoubleComplex>(state_len).unwrap();
+    let (state_d, page_table) = create_single_page_state(&device, state_len);
 
     let result = unsafe {
         launch_amplitude_encode(
             *input_d.device_ptr() as *const f64,
-            *state_d.device_ptr_mut() as *mut std::ffi::c_void,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
             input.len(),
             state_len,
+            0,
+            state_len,
+            (state_len as f64).log2() as u32,
             norm,
             std::ptr::null_mut(),
         )
@@ -439,6 +485,79 @@ fn test_amplitude_encode_small_input_large_state() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn test_amplitude_encode_multi_page() {
+    println!("Testing paged encoding with multiple pages...");
+
+    let device = match CudaDevice::new(0) {
+        Ok(d) => d,
+        Err(_) => {
+            println!("SKIP: No CUDA device available");
+            return;
+        }
+    };
+
+    // Use 16 elements split across 4 pages of 4 elements each
+    let input: Vec<f64> = (1..=16).map(|x| x as f64).collect();
+    let norm: f64 = input.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let state_len = 16;
+    let page_size = 4;
+    let num_pages = state_len / page_size;
+
+    // Allocate separate pages
+    let mut pages: Vec<cudarc::driver::CudaSlice<CuDoubleComplex>> = Vec::new();
+    let mut page_ptrs: Vec<u64> = Vec::new();
+
+    for _ in 0..num_pages {
+        let page = device.alloc_zeros::<CuDoubleComplex>(page_size).unwrap();
+        page_ptrs.push(*page.device_ptr() as u64);
+        pages.push(page);
+    }
+
+    let input_d = device.htod_copy(input.clone()).unwrap();
+    let page_table = device.htod_copy(page_ptrs).unwrap();
+
+    let result = unsafe {
+        launch_amplitude_encode(
+            *input_d.device_ptr() as *const f64,
+            *page_table.device_ptr() as *mut *mut std::ffi::c_void,
+            input.len(),
+            state_len,
+            0,
+            page_size,
+            2, // log2(4) = 2
+            norm,
+            std::ptr::null_mut(),
+        )
+    };
+
+    assert_eq!(result, 0, "Kernel launch should succeed");
+
+    // Synchronize before reading
+    device.synchronize().unwrap();
+
+    // Verify all elements across all pages
+    for page_id in 0..num_pages {
+        let page_h = device.dtoh_sync_copy(&pages[page_id]).unwrap();
+        for offset in 0..page_size {
+            let global_idx = page_id * page_size + offset;
+            let expected = input[global_idx] / norm;
+            assert!(
+                (page_h[offset].x - expected).abs() < EPSILON,
+                "Page {} element {} (global {}): expected {}, got {}",
+                page_id,
+                offset,
+                global_idx,
+                expected,
+                page_h[offset].x
+            );
+        }
+    }
+
+    println!("PASS: Multi-page encoding works correctly");
+}
+
+#[test]
 #[cfg(not(target_os = "linux"))]
 fn test_amplitude_encode_dummy_non_linux() {
     println!("Testing dummy implementation on non-Linux platform...");
@@ -448,6 +567,9 @@ fn test_amplitude_encode_dummy_non_linux() {
         qdp_kernels::launch_amplitude_encode(
             std::ptr::null(),
             std::ptr::null_mut(),
+            0,
+            0,
+            0,
             0,
             0,
             1.0,

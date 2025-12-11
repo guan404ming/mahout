@@ -19,6 +19,10 @@ use cudarc::driver::{CudaDevice, CudaSlice, DevicePtr};
 use qdp_kernels::CuDoubleComplex;
 use crate::error::{MahoutError, Result};
 
+/// Default page size: 256 MB worth of complex numbers (16M elements)
+/// Power of 2 enables fast bit-shift division in kernels
+pub const DEFAULT_PAGE_SIZE_ELEMENTS: usize = 16 * 1024 * 1024; // 16M elements = 256MB
+
 #[cfg(target_os = "linux")]
 fn bytes_to_mib(bytes: usize) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
@@ -144,71 +148,138 @@ impl GpuBufferRaw {
     }
 }
 
-/// Quantum state vector on GPU
+/// RAII wrapper for device-side page table (array of pointers)
+pub struct GpuPageTable {
+    pub(crate) slice: CudaSlice<u64>, // Store as u64 for pointer-sized values
+}
+
+impl GpuPageTable {
+    /// Get raw pointer to page table on device
+    pub fn ptr(&self) -> *mut *mut CuDoubleComplex {
+        *self.slice.device_ptr() as *mut *mut CuDoubleComplex
+    }
+}
+
+/// Paged quantum state vector on GPU
 ///
-/// Manages complex128 array of size 2^n (n = qubits) in GPU memory.
-/// Uses Arc for shared ownership (needed for DLPack/PyTorch integration).
+/// Manages complex128 array of size 2^n (n = qubits) in GPU memory using
+/// multiple page allocations. This enables state vectors larger than a
+/// single contiguous allocation limit.
+///
+/// Memory layout:
+/// - `pages`: Vector of GPU allocations, each up to `page_size_elements`
+/// - `page_table_d`: Device-side array of page pointers for kernel access
+///
 /// Thread-safe: Send + Sync
 pub struct GpuStateVector {
-    // Use Arc to allow DLPack to share ownership
-    pub(crate) buffer: Arc<GpuBufferRaw>,
+    /// Individual page allocations
+    pub(crate) pages: Vec<Arc<GpuBufferRaw>>,
+    /// Device-side page table (array of page pointers)
+    pub(crate) page_table: Arc<GpuPageTable>,
+    /// Elements per page (power of 2)
+    pub page_size_elements: usize,
+    /// log2(page_size_elements) for fast bit-shift division
+    pub page_shift: u32,
+    /// Number of qubits
     pub num_qubits: usize,
+    /// Total elements across all pages
     pub size_elements: usize,
+    /// Number of pages
+    pub num_pages: usize,
 }
 
 // Safety: CudaSlice and Arc are both Send + Sync
 unsafe impl Send for GpuStateVector {}
 unsafe impl Sync for GpuStateVector {}
+unsafe impl Send for GpuPageTable {}
+unsafe impl Sync for GpuPageTable {}
 
 impl GpuStateVector {
-    /// Create GPU state vector for n qubits
-    /// Allocates 2^n complex numbers on GPU (freed on drop)
-    pub fn new(_device: &Arc<CudaDevice>, qubits: usize) -> Result<Self> {
-        let _size_elements: usize = 1usize << qubits;
+    /// Create paged GPU state vector for n qubits
+    /// Allocates 2^n complex numbers across multiple pages on GPU (freed on drop)
+    pub fn new(device: &Arc<CudaDevice>, qubits: usize) -> Result<Self> {
+        Self::new_with_page_size(device, qubits, DEFAULT_PAGE_SIZE_ELEMENTS)
+    }
+
+    /// Create paged GPU state vector with custom page size
+    /// Page size must be a power of 2
+    pub fn new_with_page_size(_device: &Arc<CudaDevice>, qubits: usize, page_size: usize) -> Result<Self> {
+        // Validate page size is power of 2
+        if !page_size.is_power_of_two() {
+            return Err(MahoutError::InvalidInput(
+                format!("Page size must be power of 2, got {}", page_size)
+            ));
+        }
+
+        let total_elements: usize = 1usize << qubits;
+        let page_shift = page_size.trailing_zeros();
+        let num_pages = (total_elements + page_size - 1) / page_size;
 
         #[cfg(target_os = "linux")]
         {
-            let requested_bytes = _size_elements
+            let total_bytes = total_elements
                 .checked_mul(std::mem::size_of::<CuDoubleComplex>())
                 .ok_or_else(|| MahoutError::MemoryAllocation(
-                    format!("Requested GPU allocation size overflow (elements={})", _size_elements)
+                    format!("Requested GPU allocation size overflow (elements={})", total_elements)
                 ))?;
 
-            // Pre-flight check to gracefully fail before cudaMalloc when OOM is obvious
-            ensure_device_memory_available(requested_bytes, "state vector allocation", Some(qubits))?;
+            // Pre-flight check for total memory needed
+            ensure_device_memory_available(total_bytes, "paged state vector allocation", Some(qubits))?;
 
-            // Use uninitialized allocation to avoid memory bandwidth waste.
-            // TODO: Consider using a memory pool for input buffers to avoid repeated
-            // cudaMalloc overhead in high-frequency encode() calls.
-            let slice = unsafe {
-                _device.alloc::<CuDoubleComplex>(_size_elements)
-            }.map_err(|e| map_allocation_error(
-                requested_bytes,
-                "state vector allocation",
-                Some(qubits),
-                e,
-            ))?;
+            // Allocate pages
+            let mut pages = Vec::with_capacity(num_pages);
+            let mut page_pointers: Vec<u64> = Vec::with_capacity(num_pages);
+
+            for page_idx in 0..num_pages {
+                let remaining = total_elements - (page_idx * page_size);
+                let this_page_size = remaining.min(page_size);
+
+                let slice = unsafe {
+                    _device.alloc::<CuDoubleComplex>(this_page_size)
+                }.map_err(|e| map_allocation_error(
+                    this_page_size * std::mem::size_of::<CuDoubleComplex>(),
+                    &format!("page {} allocation", page_idx),
+                    Some(qubits),
+                    e,
+                ))?;
+
+                let page = Arc::new(GpuBufferRaw { slice });
+                page_pointers.push(page.ptr() as u64);
+                pages.push(page);
+            }
+
+            // Upload page table to device
+            let page_table_slice = _device.htod_copy(page_pointers)
+                .map_err(|e| MahoutError::Cuda(format!("Failed to upload page table: {:?}", e)))?;
+
+            let page_table = Arc::new(GpuPageTable { slice: page_table_slice });
 
             Ok(Self {
-                buffer: Arc::new(GpuBufferRaw { slice }),
+                pages,
+                page_table,
+                page_size_elements: page_size,
+                page_shift,
                 num_qubits: qubits,
-                size_elements: _size_elements,
+                size_elements: total_elements,
+                num_pages,
             })
         }
 
         #[cfg(not(target_os = "linux"))]
         {
-            // Non-Linux: compiles but GPU unavailable
             Err(MahoutError::Cuda("CUDA is only available on Linux. This build does not support GPU operations.".to_string()))
         }
     }
 
-    /// Get raw GPU pointer for DLPack/FFI
-    ///
-    /// # Safety
-    /// Valid while GpuStateVector or any Arc clone is alive
+    /// Get raw pointer to page table on device (for kernel launches)
+    pub fn page_table_ptr(&self) -> *mut *mut CuDoubleComplex {
+        self.page_table.ptr()
+    }
+
+    /// Get pointer to first page (for single-page compatibility)
+    /// Only valid if state fits in one page
     pub fn ptr(&self) -> *mut CuDoubleComplex {
-        self.buffer.ptr()
+        self.pages.first().map(|p| p.ptr()).unwrap_or(std::ptr::null_mut())
     }
 
     /// Get the number of qubits
@@ -221,39 +292,82 @@ impl GpuStateVector {
         self.size_elements
     }
 
-    /// Create GPU state vector for a batch of samples
-    /// Allocates num_samples * 2^qubits complex numbers on GPU
+    /// Check if state vector fits in a single page
+    pub fn is_single_page(&self) -> bool {
+        self.num_pages == 1
+    }
+
+    /// Create paged GPU state vector for a batch of samples
+    /// Allocates num_samples * 2^qubits complex numbers across pages on GPU
     pub fn new_batch(_device: &Arc<CudaDevice>, num_samples: usize, qubits: usize) -> Result<Self> {
+        Self::new_batch_with_page_size(_device, num_samples, qubits, DEFAULT_PAGE_SIZE_ELEMENTS)
+    }
+
+    /// Create paged GPU state vector for a batch with custom page size
+    pub fn new_batch_with_page_size(_device: &Arc<CudaDevice>, num_samples: usize, qubits: usize, page_size: usize) -> Result<Self> {
+        // Validate page size is power of 2
+        if !page_size.is_power_of_two() {
+            return Err(MahoutError::InvalidInput(
+                format!("Page size must be power of 2, got {}", page_size)
+            ));
+        }
+
         let single_state_size: usize = 1usize << qubits;
         let total_elements = num_samples.checked_mul(single_state_size)
             .ok_or_else(|| MahoutError::MemoryAllocation(
                 format!("Batch size overflow: {} samples * {} elements", num_samples, single_state_size)
             ))?;
 
+        let page_shift = page_size.trailing_zeros();
+        let num_pages = (total_elements + page_size - 1) / page_size;
+
         #[cfg(target_os = "linux")]
         {
-            let requested_bytes = total_elements
+            let total_bytes = total_elements
                 .checked_mul(std::mem::size_of::<CuDoubleComplex>())
                 .ok_or_else(|| MahoutError::MemoryAllocation(
                     format!("Requested GPU allocation size overflow (elements={})", total_elements)
                 ))?;
 
             // Pre-flight check
-            ensure_device_memory_available(requested_bytes, "batch state vector allocation", Some(qubits))?;
+            ensure_device_memory_available(total_bytes, "paged batch state vector allocation", Some(qubits))?;
 
-            let slice = unsafe {
-                _device.alloc::<CuDoubleComplex>(total_elements)
-            }.map_err(|e| map_allocation_error(
-                requested_bytes,
-                "batch state vector allocation",
-                Some(qubits),
-                e,
-            ))?;
+            // Allocate pages
+            let mut pages = Vec::with_capacity(num_pages);
+            let mut page_pointers: Vec<u64> = Vec::with_capacity(num_pages);
+
+            for page_idx in 0..num_pages {
+                let remaining = total_elements - (page_idx * page_size);
+                let this_page_size = remaining.min(page_size);
+
+                let slice = unsafe {
+                    _device.alloc::<CuDoubleComplex>(this_page_size)
+                }.map_err(|e| map_allocation_error(
+                    this_page_size * std::mem::size_of::<CuDoubleComplex>(),
+                    &format!("batch page {} allocation", page_idx),
+                    Some(qubits),
+                    e,
+                ))?;
+
+                let page = Arc::new(GpuBufferRaw { slice });
+                page_pointers.push(page.ptr() as u64);
+                pages.push(page);
+            }
+
+            // Upload page table to device
+            let page_table_slice = _device.htod_copy(page_pointers)
+                .map_err(|e| MahoutError::Cuda(format!("Failed to upload page table: {:?}", e)))?;
+
+            let page_table = Arc::new(GpuPageTable { slice: page_table_slice });
 
             Ok(Self {
-                buffer: Arc::new(GpuBufferRaw { slice }),
+                pages,
+                page_table,
+                page_size_elements: page_size,
+                page_shift,
                 num_qubits: qubits,
                 size_elements: total_elements,
+                num_pages,
             })
         }
 

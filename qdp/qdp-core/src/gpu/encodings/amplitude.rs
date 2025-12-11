@@ -87,9 +87,12 @@ impl QuantumEncoder for AmplitudeEncoder {
                     unsafe {
                         launch_amplitude_encode(
                             *input_slice.device_ptr() as *const f64,
-                            state_vector.ptr() as *mut c_void,
+                            state_vector.page_table_ptr() as *mut *mut c_void,
                             host_data.len(),
                             state_len,
+                            0, // state_offset: start from beginning
+                            state_vector.page_size_elements,
+                            state_vector.page_shift,
                             norm,
                             std::ptr::null_mut(), // default stream
                         )
@@ -186,11 +189,13 @@ impl QuantumEncoder for AmplitudeEncoder {
             let ret = unsafe {
                 launch_amplitude_encode_batch(
                     *input_batch_gpu.device_ptr() as *const f64,
-                    batch_state_vector.ptr() as *mut c_void,
+                    batch_state_vector.page_table_ptr() as *mut *mut c_void,
                     *inv_norms_gpu.device_ptr() as *const f64,
                     num_samples,
                     sample_size,
                     state_len,
+                    batch_state_vector.page_size_elements,
+                    batch_state_vector.page_shift,
                     std::ptr::null_mut(), // default stream
                 )
             };
@@ -242,21 +247,17 @@ impl AmplitudeEncoder {
         // Use generic pipeline infrastructure
         // The closure handles amplitude-specific kernel launch logic
         run_dual_stream_pipeline(device, host_data, |stream, input_ptr, chunk_offset, chunk_len| {
-            // Calculate offset pointer for state vector (type-safe pointer arithmetic)
-            // Offset is in complex numbers (CuDoubleComplex), not f64 elements
-            let state_ptr_offset = unsafe {
-                state_vector.ptr().cast::<u8>()
-                    .add(chunk_offset * std::mem::size_of::<qdp_kernels::CuDoubleComplex>())
-                    .cast::<std::ffi::c_void>()
-            };
-
             // Launch amplitude encoding kernel on the provided stream
+            // The paged kernel handles page table lookups internally using state_offset
             let ret = unsafe {
                 launch_amplitude_encode(
                     input_ptr,
-                    state_ptr_offset,
+                    state_vector.page_table_ptr() as *mut *mut c_void,
                     chunk_len,
                     state_len,
+                    chunk_offset, // state_offset for this chunk
+                    state_vector.page_size_elements,
+                    state_vector.page_shift,
                     norm,
                     stream.stream as *mut c_void,
                 )
@@ -288,46 +289,69 @@ impl AmplitudeEncoder {
         // host_data.len() < state_len (e.g., 1000 elements in a 1024-element state).
         let data_len = host_data.len();
         if data_len < state_len {
-            let padding_start = data_len;
-            let padding_elements = state_len - padding_start;
-            let padding_bytes = padding_elements * std::mem::size_of::<qdp_kernels::CuDoubleComplex>();
+            Self::zero_fill_paged_tail(device, state_vector, data_len, state_len)?;
+        }
 
-            // Calculate tail pointer (in complex numbers)
-            let tail_ptr = unsafe {
-                state_vector.ptr().add(padding_start) as *mut c_void
-            };
+        Ok(())
+    }
 
-            // Zero-fill padding region using CUDA Runtime API
-            // Use default stream since pipeline streams are already synchronized
-            unsafe {
-                unsafe extern "C" {
-                    fn cudaMemsetAsync(
-                        devPtr: *mut c_void,
-                        value: i32,
-                        count: usize,
-                        stream: *mut c_void,
-                    ) -> i32;
-                }
+    /// Zero-fill the tail region of a paged state vector
+    #[cfg(target_os = "linux")]
+    fn zero_fill_paged_tail(
+        device: &Arc<CudaDevice>,
+        state_vector: &GpuStateVector,
+        start_idx: usize,
+        end_idx: usize,
+    ) -> Result<()> {
+        unsafe {
+            unsafe extern "C" {
+                fn cudaMemsetAsync(
+                    devPtr: *mut c_void,
+                    value: i32,
+                    count: usize,
+                    stream: *mut c_void,
+                ) -> i32;
+            }
+
+            let page_size = state_vector.page_size_elements;
+            let mut current_idx = start_idx;
+
+            while current_idx < end_idx {
+                // Calculate which page and offset within page
+                let page_id = current_idx / page_size;
+                let offset_in_page = current_idx % page_size;
+
+                // How many elements to zero in this page
+                let remaining_in_page = page_size - offset_in_page;
+                let remaining_total = end_idx - current_idx;
+                let elements_to_zero = remaining_in_page.min(remaining_total);
+
+                // Get page pointer and calculate offset
+                let page_ptr = state_vector.pages[page_id].ptr();
+                let tail_ptr = page_ptr.add(offset_in_page) as *mut c_void;
+                let bytes_to_zero = elements_to_zero * std::mem::size_of::<qdp_kernels::CuDoubleComplex>();
 
                 let result = cudaMemsetAsync(
                     tail_ptr,
                     0,
-                    padding_bytes,
+                    bytes_to_zero,
                     std::ptr::null_mut(), // default stream
                 );
 
                 if result != 0 {
                     return Err(MahoutError::Cuda(
-                        format!("Failed to zero-fill padding region: {} ({})",
-                                result, cuda_error_to_string(result))
+                        format!("Failed to zero-fill padding region in page {}: {} ({})",
+                                page_id, result, cuda_error_to_string(result))
                     ));
                 }
-            }
 
-            // Synchronize to ensure padding is complete before returning
-            device.synchronize()
-                .map_err(|e| MahoutError::Cuda(format!("Failed to sync after padding: {:?}", e)))?;
+                current_idx += elements_to_zero;
+            }
         }
+
+        // Synchronize to ensure padding is complete before returning
+        device.synchronize()
+            .map_err(|e| MahoutError::Cuda(format!("Failed to sync after padding: {:?}", e)))?;
 
         Ok(())
     }

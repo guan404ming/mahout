@@ -20,60 +20,86 @@
 #include <cuComplex.h>
 #include <vector_types.h>
 
-__global__ void amplitude_encode_kernel(
+/// Paged amplitude encoding kernel
+/// Uses page table for state vector access to support arbitrarily large allocations
+///
+/// @param input        Input data pointer (may be offset for chunked processing)
+/// @param page_table   Device array of page pointers
+/// @param input_len    Number of input elements to process in this chunk
+/// @param state_len    Total state vector size (2^num_qubits)
+/// @param state_offset Starting index in state vector for this chunk
+/// @param page_size    Elements per page (power of 2)
+/// @param page_shift   log2(page_size) for bit-shift division
+/// @param inv_norm     1.0 / L2_norm for normalization
+__global__ void amplitude_encode_paged_kernel(
     const double* __restrict__ input,
-    cuDoubleComplex* __restrict__ state,
+    cuDoubleComplex** __restrict__ page_table,
     size_t input_len,
     size_t state_len,
+    size_t state_offset,    // Starting index in state vector for chunked processing
+    size_t page_size,       // Elements per page (power of 2)
+    unsigned int page_shift, // log2(page_size) for bit-shift division
     double inv_norm
 ) {
     // We process 2 elements per thread to maximize memory bandwidth via double2
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Each thread handles two state amplitudes (indices 2*idx and 2*idx + 1)
-    size_t state_idx_base = idx * 2;
+    size_t local_idx = idx * 2;
 
-    if (state_idx_base >= state_len) return;
+    if (local_idx >= input_len) return;
 
     double v1 = 0.0;
     double v2 = 0.0;
 
     // Vectorized Load Optimization:
     // If we are well within bounds, treat input as double2 to issue a single 128-bit load instruction.
-    // This reduces memory transactions and improves throughput on RTX cards.
-    if (state_idx_base + 1 < input_len) {
-        // Reinterpret cast to load two doubles at once
-        // Note: Assumes input is reasonably aligned (standard cudaMalloc provides 256-byte alignment)
+    if (local_idx + 1 < input_len) {
         const double2* input_vec = reinterpret_cast<const double2*>(input);
         double2 loaded = input_vec[idx];
         v1 = loaded.x;
         v2 = loaded.y;
     }
-    // Handle edge case: Odd input length
-    else if (state_idx_base < input_len) {
-        v1 = input[state_idx_base];
-        // v2 remains 0.0
+    else if (local_idx < input_len) {
+        v1 = input[local_idx];
     }
 
-    // Write output:
-    // Apply pre-calculated reciprocal (multiplication is faster than division)
-    state[state_idx_base]     = make_cuDoubleComplex(v1 * inv_norm, 0.0);
+    // Calculate global state indices (local index + chunk offset)
+    size_t global_idx_1 = state_offset + local_idx;
+    size_t global_idx_2 = state_offset + local_idx + 1;
 
-    // Check boundary for the second element (state_len is usually power of 2, but good to be safe)
-    if (state_idx_base + 1 < state_len) {
-        state[state_idx_base + 1] = make_cuDoubleComplex(v2 * inv_norm, 0.0);
+    // Page table lookup using bit operations (fast for power-of-2 page sizes)
+    size_t page_mask = page_size - 1;
+
+    // First element
+    if (global_idx_1 < state_len) {
+        size_t page_id_1 = global_idx_1 >> page_shift;
+        size_t offset_1 = global_idx_1 & page_mask;
+        cuDoubleComplex* page_1 = page_table[page_id_1];
+        page_1[offset_1] = make_cuDoubleComplex(v1 * inv_norm, 0.0);
+    }
+
+    // Second element (may be on same or next page)
+    if (global_idx_2 < state_len) {
+        size_t page_id_2 = global_idx_2 >> page_shift;
+        size_t offset_2 = global_idx_2 & page_mask;
+        cuDoubleComplex* page_2 = page_table[page_id_2];
+        page_2[offset_2] = make_cuDoubleComplex(v2 * inv_norm, 0.0);
     }
 }
 
 extern "C" {
 
-/// Launch amplitude encoding kernel
+/// Launch paged amplitude encoding kernel
 ///
 /// # Arguments
-/// * input_d - Device pointer to input data (already normalized by host)
-/// * state_d - Device pointer to output state vector
-/// * input_len - Number of input elements
+/// * input_d - Device pointer to input data
+/// * page_table_d - Device pointer to array of page pointers
+/// * input_len - Number of input elements to process
 /// * state_len - Target state vector size (2^num_qubits)
+/// * state_offset - Starting index in state vector (for chunked processing)
+/// * page_size - Elements per page (must be power of 2)
+/// * page_shift - log2(page_size) for fast division
 /// * norm - L2 norm computed by host
 /// * stream - CUDA stream for async execution (nullptr = default stream)
 ///
@@ -81,9 +107,12 @@ extern "C" {
 /// CUDA error code (0 = cudaSuccess)
 int launch_amplitude_encode(
     const double* input_d,
-    void* state_d,
+    void** page_table_d,
     size_t input_len,
     size_t state_len,
+    size_t state_offset,
+    size_t page_size,
+    unsigned int page_shift,
     double norm,
     cudaStream_t stream
 ) {
@@ -93,46 +122,53 @@ int launch_amplitude_encode(
 
     double inv_norm = 1.0 / norm;
 
-    cuDoubleComplex* state_complex_d = static_cast<cuDoubleComplex*>(state_d);
+    cuDoubleComplex** page_table = reinterpret_cast<cuDoubleComplex**>(page_table_d);
 
     const int blockSize = 256;
-    // Halve the grid size because each thread now processes 2 elements
-    const int gridSize = (state_len / 2 + blockSize - 1) / blockSize;
+    // Grid size based on input_len (chunk size), not state_len
+    const int gridSize = (input_len / 2 + blockSize - 1) / blockSize;
 
-    amplitude_encode_kernel<<<gridSize, blockSize, 0, stream>>>(
+    amplitude_encode_paged_kernel<<<gridSize, blockSize, 0, stream>>>(
         input_d,
-        state_complex_d,
+        page_table,
         input_len,
         state_len,
-        inv_norm // Pass reciprocal
+        state_offset,
+        page_size,
+        page_shift,
+        inv_norm
     );
 
     return (int)cudaGetLastError();
 }
 
-/// Optimized batch amplitude encoding kernel
+/// Paged batch amplitude encoding kernel
 ///
 /// Memory Layout (row-major):
 /// - input_batch: [sample0_data | sample1_data | ... | sampleN_data]
-/// - state_batch: [sample0_state | sample1_state | ... | sampleN_state]
+/// - state pages: distributed across page table
 ///
 /// Optimizations:
 /// 1. Vectorized double2 loads for 128-bit memory transactions
 /// 2. Grid-stride loop for arbitrary batch sizes
 /// 3. Coalesced memory access within warps
-/// 4. Minimized register pressure
-__global__ void amplitude_encode_batch_kernel(
+/// 4. Bit-shift page lookup for power-of-2 page sizes
+__global__ void amplitude_encode_batch_paged_kernel(
     const double* __restrict__ input_batch,
-    cuDoubleComplex* __restrict__ state_batch,
+    cuDoubleComplex** __restrict__ page_table,
     const double* __restrict__ inv_norms,
     size_t num_samples,
     size_t input_len,
-    size_t state_len
+    size_t state_len,
+    size_t page_size,
+    unsigned int page_shift
 ) {
     // Grid-stride loop pattern for flexibility
     const size_t elements_per_sample = state_len / 2;  // Each thread handles 2 elements
     const size_t total_work = num_samples * elements_per_sample;
     const size_t stride = gridDim.x * blockDim.x;
+    const size_t page_mask = page_size - 1;
+    const size_t total_state_elements = num_samples * state_len;
 
     size_t global_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -166,46 +202,57 @@ __global__ void amplitude_encode_batch_kernel(
             v1 = v2 = 0.0;
         }
 
-        // Normalize and write as complex numbers
-        // Compiler will optimize multiplications
+        // Normalize
         const cuDoubleComplex c1 = make_cuDoubleComplex(v1 * inv_norm, 0.0);
         const cuDoubleComplex c2 = make_cuDoubleComplex(v2 * inv_norm, 0.0);
 
-        // Write to global memory (coalesced within warp)
-        state_batch[state_base + elem_offset] = c1;
-        if (elem_offset + 1 < state_len) {
-            state_batch[state_base + elem_offset + 1] = c2;
+        // Page table lookup for first element
+        size_t global_idx_1 = state_base + elem_offset;
+        size_t page_id_1 = global_idx_1 >> page_shift;
+        size_t offset_1 = global_idx_1 & page_mask;
+        page_table[page_id_1][offset_1] = c1;
+
+        // Page table lookup for second element
+        size_t global_idx_2 = state_base + elem_offset + 1;
+        if (global_idx_2 < total_state_elements) {
+            size_t page_id_2 = global_idx_2 >> page_shift;
+            size_t offset_2 = global_idx_2 & page_mask;
+            page_table[page_id_2][offset_2] = c2;
         }
     }
 }
 
-/// Launch optimized batch amplitude encoding kernel
+/// Launch paged batch amplitude encoding kernel
 ///
 /// # Arguments
 /// * input_batch_d - Device pointer to batch input data
-/// * state_batch_d - Device pointer to output batch state vectors
+/// * page_table_d - Device pointer to array of page pointers
 /// * inv_norms_d - Device pointer to inverse norms array
 /// * num_samples - Number of samples in batch
 /// * input_len - Elements per sample
 /// * state_len - State vector size per sample (2^num_qubits)
+/// * page_size - Elements per page (must be power of 2)
+/// * page_shift - log2(page_size) for fast division
 /// * stream - CUDA stream for async execution
 ///
 /// # Returns
 /// CUDA error code (0 = cudaSuccess)
 int launch_amplitude_encode_batch(
     const double* input_batch_d,
-    void* state_batch_d,
+    void** page_table_d,
     const double* inv_norms_d,
     size_t num_samples,
     size_t input_len,
     size_t state_len,
+    size_t page_size,
+    unsigned int page_shift,
     cudaStream_t stream
 ) {
     if (num_samples == 0 || state_len == 0) {
         return cudaErrorInvalidValue;
     }
 
-    cuDoubleComplex* state_complex_d = static_cast<cuDoubleComplex*>(state_batch_d);
+    cuDoubleComplex** page_table = reinterpret_cast<cuDoubleComplex**>(page_table_d);
 
     // Optimal configuration for modern GPUs (SM 7.0+)
     // - Block size: 256 threads (8 warps, good occupancy)
@@ -219,13 +266,15 @@ int launch_amplitude_encode_batch(
     const size_t max_blocks = 2048;  // Reasonable limit for most GPUs
     const size_t gridSize = (blocks_needed < max_blocks) ? blocks_needed : max_blocks;
 
-    amplitude_encode_batch_kernel<<<gridSize, blockSize, 0, stream>>>(
+    amplitude_encode_batch_paged_kernel<<<gridSize, blockSize, 0, stream>>>(
         input_batch_d,
-        state_complex_d,
+        page_table,
         inv_norms_d,
         num_samples,
         input_len,
-        state_len
+        state_len,
+        page_size,
+        page_shift
     );
 
     return (int)cudaGetLastError();
