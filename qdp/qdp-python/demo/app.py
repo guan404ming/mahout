@@ -173,8 +173,40 @@ SAMPLE_THROUGHPUT = {
 
 MAHOUT_COLOR = "#E45B30"
 PENNYLANE_COLOR = "#6B9BD2"
-PENNYLANE_GPU_COLOR = "#2563EB"
+PENNYLANE_GPU_COLOR = "#0EA5E9"
 QISKIT_COLOR = "#7B68A8"
+
+# Load full benchmark data for scaling charts (all encodings)
+import json as _json
+import os as _os
+
+_bench_path = _os.path.join(
+    _os.path.dirname(_os.path.abspath(__file__)),
+    "..",
+    "..",
+    "..",
+    "papers",
+    "qdp-demo",
+    "bench_all_results.json",
+)
+FULL_BENCH = {}
+try:
+    with open(_bench_path) as _f:
+        _raw = _json.load(_f)
+    for _r in _raw:
+        enc = _r.get("encoding", "")
+        fw = _r.get("framework", "")
+        nq = _r.get("qubits", 0)
+        ms = _r.get("ms_per_vec")
+        if enc and fw and nq and ms is not None:
+            # Normalize framework names
+            if fw == "PennyLane":
+                fw = "PL default.qubit"
+            elif fw.startswith("PennyLane ("):
+                fw = "PL lightning.gpu"
+            FULL_BENCH.setdefault(enc, {}).setdefault(nq, {})[fw] = ms
+except Exception:
+    pass
 
 # ---------------------------------------------------------------------------
 # Benchmark runners
@@ -544,8 +576,10 @@ def main():
         layout="wide",
     )
 
-    st.title("QDP: GPU-Accelerated Quantum Data Processing")
-    st.caption("Apache Mahout | Rust + CUDA | Zero-Copy DLPack Interop")
+    st.html(
+        '<h1 style="font-size:30px;white-space:nowrap;margin:0;padding:16px 0 0">Apache Mahout QDP: GPU-Accelerated Quantum Data Processing</h1>'
+    )
+    st.caption("Rust + CUDA | Zero-Copy DLPack Interop")
 
     # -- Sidebar -----------------------------------------------------------
     st.sidebar.header("Configuration")
@@ -554,11 +588,11 @@ def main():
     st.sidebar.caption(ENCODING_DESCRIPTIONS[encoding])
 
     num_qubits = st.sidebar.slider(
-        "Number of Qubits", min_value=2, max_value=20, value=8
+        "Number of Qubits", min_value=2, max_value=20, value=12
     )
-    batch_size = st.sidebar.slider("Batch Size", min_value=1, max_value=256, value=64)
+    batch_size = st.sidebar.slider("Batch Size", min_value=1, max_value=256, value=128)
     num_batches = st.sidebar.slider(
-        "Number of Batches", min_value=10, max_value=500, value=100
+        "Number of Batches", min_value=10, max_value=500, value=250
     )
 
     st.sidebar.divider()
@@ -588,7 +622,7 @@ def main():
 
     # -- Tabs ---------------------------------------------------------------
     tab1, tab2, tab3 = st.tabs(
-        ["Pipeline Demo", "Framework Comparison", "Scaling Analysis"]
+        ["Pipeline Demo", "Encoding Method", "Framework Comparison"]
     )
 
     # ---- Tab 1: Pipeline Demo --------------------------------------------
@@ -631,120 +665,424 @@ def main():
                         SAMPLE_LATENCY.keys(), key=lambda q: abs(q - num_qubits)
                     )
                     lat = SAMPLE_LATENCY[nearest]["Mahout"]
-                    st.info(f"Sample latency ({nearest}q): {lat:.4f} ms/vector")
                     tp = 1000.0 / lat
-                    st.metric("Est. Throughput", f"{tp:,.0f} vec/s")
 
-    # ---- Tab 2: Framework Comparison -------------------------------------
-    with tab2:
-        st.subheader("Mahout QDP vs PennyLane vs Qiskit")
+                    # Pipeline animation
+                    pipeline_html = f"""
+                    <style>
+                      .pipe-step {{
+                        display: inline-flex; align-items: center; gap: 8px;
+                        margin-bottom: 8px;
+                      }}
+                      .pipe-block {{
+                        padding: 8px 14px; border-radius: 6px; color: white;
+                        font-size: 12px; font-weight: 600;
+                        opacity: 0; animation: pipeSlide 0.4s ease-out forwards;
+                      }}
+                      .pipe-arrow {{
+                        color: #94A3B8; font-size: 16px;
+                        opacity: 0; animation: pipeSlide 0.2s ease-out forwards;
+                      }}
+                      @keyframes pipeSlide {{
+                        from {{ opacity: 0; transform: translateX(-6px); }}
+                        to {{ opacity: 1; transform: translateX(0); }}
+                      }}
+                      .pipe-result {{
+                        margin-top: 12px; padding: 10px 16px;
+                        background: #D1FAE5; border-radius: 8px;
+                        font-weight: 700; color: #059669; font-size: 13px;
+                        opacity: 0; animation: pipeSlide 0.5s ease-out forwards;
+                        animation-delay: 2.0s;
+                      }}
+                    </style>
+                    <div style="font-family: -apple-system, sans-serif; padding: 4px 0;">
+                      <div class="pipe-step">
+                        <div class="pipe-block" style="background:#3B82F6; animation-delay:0.1s">
+                          Read Data
+                        </div>
+                        <div class="pipe-arrow" style="animation-delay:0.4s">&rarr;</div>
+                        <div class="pipe-block" style="background:#475569; animation-delay:0.6s">
+                          Normalize
+                        </div>
+                        <div class="pipe-arrow" style="animation-delay:0.9s">&rarr;</div>
+                        <div class="pipe-block" style="background:{MAHOUT_COLOR}; animation-delay:1.1s">
+                          GPU Encode
+                        </div>
+                        <div class="pipe-arrow" style="animation-delay:1.4s">&rarr;</div>
+                        <div class="pipe-block" style="background:#10B981; animation-delay:1.6s">
+                          DLPack &rarr; PyTorch
+                        </div>
+                      </div>
+                      <div class="pipe-result">
+                        {lat:.4f} ms/vector &middot; {tp:,.0f} vec/s
+                      </div>
+                    </div>
+                    """
+                    st.html(pipeline_html)
 
-        if st.button("Run Benchmark", key="run_bench"):
-            if live_mode:
-                with st.spinner("Running Mahout..."):
-                    m_lat = run_live_mahout_latency(
-                        num_qubits, num_batches, batch_size, encoding
-                    )
-                    m_tp = run_live_mahout_throughput(
-                        num_qubits, num_batches, batch_size, encoding
-                    )
-
-                latency_data = {"Mahout": m_lat}
-                tp_data = {"Mahout": m_tp}
-
-                # Limit vectors for competitors (they are much slower)
-                competitor_vecs = min(50, total_vectors)
-
-                if HAS_PENNYLANE:
-                    with st.spinner("Running PennyLane..."):
-                        pl_lat = run_live_pennylane_latency(num_qubits, competitor_vecs)
-                    latency_data["PennyLane"] = pl_lat
-                    tp_data["PennyLane"] = 1000.0 / pl_lat
-
-                if HAS_QISKIT:
-                    with st.spinner("Running Qiskit..."):
-                        q_lat = run_live_qiskit_latency(num_qubits, competitor_vecs)
-                    latency_data["Qiskit"] = q_lat
-                    tp_data["Qiskit"] = 1000.0 / q_lat
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.pyplot(plot_latency_comparison(latency_data, num_qubits))
-                with col2:
-                    st.pyplot(plot_throughput_comparison(tp_data, num_qubits))
-
-                # Speedup summary
-                if len(latency_data) > 1:
-                    st.divider()
-                    scols = st.columns(len(latency_data) - 1)
-                    idx = 0
-                    for fw, lat in latency_data.items():
-                        if fw == "Mahout":
-                            continue
-                        speedup = lat / m_lat
-                        scols[idx].metric(f"Speedup vs {fw}", f"{speedup:,.0f}x")
-                        idx += 1
-            else:
-                nearest = min(SAMPLE_LATENCY.keys(), key=lambda q: abs(q - num_qubits))
-                latency_data = SAMPLE_LATENCY[nearest]
-                tp_data = SAMPLE_THROUGHPUT[nearest]
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.pyplot(plot_latency_comparison(latency_data, nearest))
-                with col2:
-                    st.pyplot(plot_throughput_comparison(tp_data, nearest))
-
-                st.divider()
-                m_lat = latency_data["Mahout"]
-                scols = st.columns(3)
-                scols[0].metric(
-                    "vs PL default",
-                    f"{latency_data['PL default.qubit'] / m_lat:,.0f}x",
-                )
-                scols[1].metric(
-                    "vs PL lightning",
-                    f"{latency_data['PL lightning.gpu'] / m_lat:,.0f}x",
-                )
-                scols[2].metric(
-                    "vs Qiskit",
-                    f"{latency_data['Qiskit'] / m_lat:,.0f}x",
-                )
-        else:
-            st.info("Click 'Run Benchmark' to compare frameworks.")
-
-    # ---- Tab 3: Scaling Analysis -----------------------------------------
+    # ---- Tab 3: Framework Comparison (Scaling) -----------------------------
     with tab3:
-        st.subheader("Performance Scaling by Qubit Count")
+        st.subheader("Latency Scaling: Mahout vs PennyLane vs Qiskit")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.pyplot(plot_scaling("latency"))
-        with col2:
-            st.pyplot(plot_scaling("throughput"))
+        # Use encoding from sidebar config
+        enc_data = FULL_BENCH.get(encoding, {})
+        if not enc_data:
+            enc_data = {q: v for q, v in SAMPLE_LATENCY.items()}
 
-        st.divider()
-        st.markdown("**Speedup Summary (sample data)**")
+        qubits_list = sorted(enc_data.keys())
 
-        rows = []
-        for q in sorted(SAMPLE_LATENCY.keys()):
-            d = SAMPLE_LATENCY[q]
-            m = d["Mahout"]
-            pl = d.get("PL default.qubit")
-            plg = d.get("PL lightning.gpu")
-            qk = d.get("Qiskit")
-            rows.append(
-                {
-                    "Qubits": q,
-                    "Mahout (ms)": f"{m:.3f}",
-                    "PL default (ms)": f"{pl:.2f}" if pl else "-",
-                    "PL lightning (ms)": f"{plg:.2f}" if plg else "-",
-                    "Qiskit (ms)": f"{qk:.1f}" if qk else "-",
-                    "vs PL default": f"{pl / m:,.0f}x" if pl else "-",
-                    "vs PL lightning": f"{plg / m:,.0f}x" if plg else "-",
-                }
+        col_chart, col_table = st.columns([3, 2])
+
+        with col_chart:
+            fig_s, ax_s = plt.subplots(figsize=(7, 4))
+            for fw, color, ls, marker in [
+                ("Mahout", MAHOUT_COLOR, "-", "o"),
+                ("PL default.qubit", PENNYLANE_COLOR, "--", "s"),
+                ("PL lightning.gpu", PENNYLANE_GPU_COLOR, "-", "D"),
+                ("Qiskit", QISKIT_COLOR, "--", "^"),
+            ]:
+                vals = [enc_data.get(q, {}).get(fw) for q in qubits_list]
+                valid_q = [q for q, v in zip(qubits_list, vals) if v is not None]
+                valid_v = [v for v in vals if v is not None]
+                if valid_v:
+                    ax_s.plot(
+                        valid_q,
+                        valid_v,
+                        marker=marker,
+                        linestyle=ls,
+                        color=color,
+                        label=fw,
+                        linewidth=2,
+                        markersize=5,
+                        markeredgecolor="white",
+                        markeredgewidth=0.5,
+                    )
+            ax_s.set_xlabel("Number of Qubits", fontsize=11)
+            ax_s.set_ylabel("Latency (ms / vector)", fontsize=11)
+            ax_s.set_title(
+                f"Data-to-State Latency: {encoding.capitalize()} Encoding", fontsize=13
             )
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+            ax_s.set_yscale("log")
+            ax_s.set_xticks([q for q in qubits_list if q % 4 == 2 or q % 4 == 0])
+            ax_s.legend(frameon=False, fontsize=9)
+            ax_s.grid(alpha=0.3)
+            ax_s.spines["top"].set_visible(False)
+            ax_s.spines["right"].set_visible(False)
+            fig_s.tight_layout()
+            st.pyplot(fig_s)
+
+        with col_table:
+            st.markdown("**Speedup Summary**")
+            rows = []
+            for q in qubits_list:
+                d = enc_data.get(q, {})
+                m = d.get("Mahout")
+                pl = d.get("PL default.qubit")
+                plg = d.get("PL lightning.gpu")
+                qk = d.get("Qiskit")
+                if m:
+                    rows.append(
+                        {
+                            "Qubits": q,
+                            "Mahout": f"{m:.4f}",
+                            "vs PL": f"{pl / m:,.0f}x" if pl and m else "-",
+                            "vs Lightning": f"{plg / m:,.0f}x" if plg and m else "-",
+                            "vs Qiskit": f"{qk / m:,.0f}x" if qk and m else "-",
+                        }
+                    )
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    # ---- Tab 2: Encoding Method (Gate vs Fused Kernel) ---------------------
+    with tab2:
+        st.subheader("Why QDP is Faster: Gate Simulation vs Fused Kernel")
+
+        nq_demo = num_qubits
+        state_dim = 1 << nq_demo
+
+        # Build gate list based on encoding
+        if encoding == "amplitude":
+            gates = (
+                [f"RY(q{i})" for i in range(nq_demo)]
+                + [f"CNOT(q{i},q{i + 1})" for i in range(nq_demo - 1)]
+                + ["Normalize"]
+            )
+        elif encoding == "angle":
+            gates = [f"RY(x{i}, q{i})" for i in range(nq_demo)]
+        elif encoding == "basis":
+            gates = [f"X(q{i})" for i in range(nq_demo)]
+        else:
+            gates = [f"P(q{i})" for i in range(nq_demo)] + [
+                f"ZZ(q{i},q{j})" for i in range(nq_demo) for j in range(i + 1, nq_demo)
+            ]
+
+        total_gates = len(gates)
+        nearest = min(SAMPLE_LATENCY.keys(), key=lambda q: abs(q - nq_demo))
+        pl_lat = SAMPLE_LATENCY[nearest].get("PL default.qubit", 1.0)
+        m_lat = SAMPLE_LATENCY[nearest]["Mahout"]
+        speedup = pl_lat / m_lat if m_lat > 0 else 0
+
+        # Gate colors for animation
+        gate_colors = []
+        for g in gates:
+            if g.startswith("RY"):
+                gate_colors.append("#3B82F6")
+            elif g.startswith("CNOT"):
+                gate_colors.append("#8B5CF6")
+            elif g.startswith("X"):
+                gate_colors.append("#EF4444")
+            elif g.startswith("ZZ"):
+                gate_colors.append("#F59E0B")
+            elif g.startswith("P"):
+                gate_colors.append("#10B981")
+            else:
+                gate_colors.append("#6B7280")
+
+        # Build gate SVG boxes
+        gate_svgs = ""
+        gx = 10
+        for i, (g, c) in enumerate(zip(gates, gate_colors)):
+            delay = 0.3 + i * 0.25
+            gate_svgs += f'''
+            <g class="gate" style="animation-delay: {delay}s">
+              <rect x="{gx}" y="30" width="60" height="32" rx="4"
+                    fill="{c}" opacity="0.15" class="gate-bg"/>
+              <rect x="{gx}" y="30" width="60" height="32" rx="4"
+                    fill="{c}" class="gate-fill"/>
+              <text x="{gx + 30}" y="50" text-anchor="middle"
+                    font-size="9" fill="white" font-weight="bold">{g}</text>
+            </g>'''
+            gx += 68
+        gate_total_w = gx + 10
+
+        # Fused kernel: single wide block
+        fused_steps = [
+            ("Pinned Copy", "#475569", 80),
+            ("DMA Transfer", "#475569", 80),
+            (f"CUDA Kernel ({state_dim} threads)", MAHOUT_COLOR, 200),
+            ("DLPack", "#475569", 70),
+        ]
+        fused_svgs = ""
+        fx = 10
+        for i, (label, color, w) in enumerate(fused_steps):
+            delay = 0.3 + i * 0.15
+            fused_svgs += f'''
+            <g class="gate" style="animation-delay: {delay}s">
+              <rect x="{fx}" y="30" width="{w}" height="32" rx="4"
+                    fill="{color}" opacity="0.15" class="gate-bg"/>
+              <rect x="{fx}" y="30" width="{w}" height="32" rx="4"
+                    fill="{color}" class="gate-fill"/>
+              <text x="{fx + w // 2}" y="50" text-anchor="middle"
+                    font-size="9" fill="white" font-weight="bold">{label}</text>
+            </g>'''
+            fx += w + 8
+        fused_total_w = fx + 10
+
+        # Animation duration
+        gate_duration = 0.3 + total_gates * 0.25 + 0.5
+        fused_duration = 0.3 + len(fused_steps) * 0.15 + 0.5
+
+        # Build gate pill HTML
+        gate_pills = ""
+        for i, (g, c) in enumerate(zip(gates, gate_colors)):
+            delay = 0.2 + i * 0.18
+            gate_pills += (
+                f'<span class="pill" style="background:{c};animation-delay:{delay}s">'
+                f'{g}<span class="arrow-r">&#8594;</span></span>'
+            )
+
+        fused_labels = [
+            "Pinned Copy",
+            "DMA Transfer",
+            f"CUDA Kernel ({state_dim} threads)",
+            "DLPack",
+        ]
+        fused_colors_list = ["#475569", "#475569", MAHOUT_COLOR, "#475569"]
+        fused_pills = ""
+        for i, (label, c) in enumerate(zip(fused_labels, fused_colors_list)):
+            delay = 0.2 + i * 0.12
+            w = "flex:2" if "CUDA" in label else "flex:1"
+            fused_pills += (
+                f'<span class="pill fused" style="background:{c};animation-delay:{delay}s;{w}">'
+                f"{label}</span>"
+            )
+
+        gate_duration = 0.2 + total_gates * 0.18 + 0.4
+        fused_duration = 0.2 + 4 * 0.12 + 0.4
+        final_delay = max(gate_duration, fused_duration) + 0.2
+
+        html = f"""
+        <style>
+          .comp-container {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            padding: 0 4px;
+          }}
+          .comp-section {{
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            background: #FAFBFC;
+          }}
+          .comp-section.fused {{
+            background: #FFF7ED;
+            border-color: #FED7AA;
+          }}
+          .comp-title {{
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 4px;
+          }}
+          .comp-desc {{
+            font-size: 12px;
+            color: #64748B;
+            margin-bottom: 14px;
+          }}
+          .pill-row {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+            margin-bottom: 14px;
+          }}
+          .pill {{
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            border-radius: 6px;
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            opacity: 0;
+            animation: slideIn 0.3s ease-out forwards;
+          }}
+          .pill.fused {{
+            padding: 10px 16px;
+            font-size: 12px;
+            border-radius: 8px;
+          }}
+          .arrow-r {{
+            margin-left: 6px;
+            opacity: 0.5;
+          }}
+          @keyframes slideIn {{
+            from {{ opacity: 0; transform: translateX(-8px); }}
+            to {{ opacity: 1; transform: translateX(0); }}
+          }}
+          .comp-result {{
+            font-size: 13px;
+            font-weight: 700;
+            padding: 8px 14px;
+            border-radius: 8px;
+            display: inline-block;
+            opacity: 0;
+            animation: slideIn 0.4s ease-out forwards;
+          }}
+          .comp-result.slow {{
+            background: #FEE2E2;
+            color: #DC2626;
+            animation-delay: {gate_duration}s;
+          }}
+          .comp-result.fast {{
+            background: #D1FAE5;
+            color: #059669;
+            animation-delay: {fused_duration}s;
+          }}
+          .summary-row {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 32px;
+            padding: 20px 0 8px;
+            opacity: 0;
+            animation: slideIn 0.5s ease-out forwards;
+            animation-delay: {final_delay}s;
+          }}
+          .summary-item {{
+            text-align: center;
+          }}
+          .summary-num {{
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1.1;
+          }}
+          .summary-label {{
+            font-size: 11px;
+            color: #64748B;
+            margin-top: 2px;
+          }}
+          .summary-op {{
+            font-size: 20px;
+            color: #94A3B8;
+            font-weight: 300;
+          }}
+        </style>
+
+        <div class="comp-container">
+          <div class="comp-section">
+            <div class="comp-title" style="color:#3B82F6">
+              Gate Simulation
+              <span style="font-weight:400;color:#94A3B8;font-size:12px">
+                PennyLane / Qiskit
+              </span>
+            </div>
+            <div class="comp-desc">
+              {encoding} encoding, {nq_demo} qubits.
+              Each gate modifies the state vector sequentially.
+            </div>
+            <div class="pill-row">
+              {gate_pills}
+              <span class="pill" style="background:#10B981;animation-delay:{0.2 + total_gates * 0.18}s">
+                |&#936;&#10217;
+              </span>
+            </div>
+            <div class="comp-result slow">
+              {pl_lat:.2f} ms/vector &middot; {total_gates} sequential operations
+            </div>
+          </div>
+
+          <div class="comp-section fused">
+            <div class="comp-title" style="color:{MAHOUT_COLOR}">
+              Fused CUDA Kernel
+              <span style="font-weight:400;color:#94A3B8;font-size:12px">
+                Mahout QDP
+              </span>
+            </div>
+            <div class="comp-desc">
+              {encoding} encoding, {nq_demo} qubits.
+              One kernel computes all {state_dim} amplitudes in parallel.
+            </div>
+            <div class="pill-row" style="display:flex;gap:4px;">
+              {fused_pills}
+              <span class="pill fused" style="background:#10B981;animation-delay:{0.2 + 4 * 0.12}s;flex:0">
+                |&#936;&#10217;
+              </span>
+            </div>
+            <div class="comp-result fast">
+              {m_lat:.4f} ms/vector &middot; 1 kernel launch, {state_dim} parallel threads
+            </div>
+          </div>
+
+          <div class="summary-row">
+            <div class="summary-item">
+              <div class="summary-num" style="color:#3B82F6">{total_gates}</div>
+              <div class="summary-label">Sequential Ops</div>
+            </div>
+            <div class="summary-op">vs</div>
+            <div class="summary-item">
+              <div class="summary-num" style="color:{MAHOUT_COLOR}">1</div>
+              <div class="summary-label">Kernel Launch</div>
+            </div>
+            <div class="summary-op">=</div>
+            <div class="summary-item">
+              <div class="summary-num" style="color:#059669">{speedup:,.0f}x</div>
+              <div class="summary-label">Faster</div>
+            </div>
+          </div>
+        </div>
+        """
+
+        st.html(html)
 
 
 if __name__ == "__main__":

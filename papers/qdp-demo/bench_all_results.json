@@ -302,42 +302,6 @@
   {
     "framework": "Mahout",
     "encoding": "iqp",
-    "qubits": 2,
-    "ms_per_vec": 0.5353
-  },
-  {
-    "framework": "Mahout",
-    "encoding": "iqp",
-    "qubits": 4,
-    "ms_per_vec": 2.1387
-  },
-  {
-    "framework": "Mahout",
-    "encoding": "iqp",
-    "qubits": 6,
-    "ms_per_vec": 1.1934
-  },
-  {
-    "framework": "Mahout",
-    "encoding": "iqp",
-    "qubits": 8,
-    "ms_per_vec": 1.3042
-  },
-  {
-    "framework": "Mahout",
-    "encoding": "iqp",
-    "qubits": 10,
-    "ms_per_vec": 1.0811
-  },
-  {
-    "framework": "Mahout",
-    "encoding": "iqp",
-    "qubits": 12,
-    "ms_per_vec": 0.1969
-  },
-  {
-    "framework": "Mahout",
-    "encoding": "iqp",
     "qubits": 14,
     "ms_per_vec": 0.228
   },
@@ -760,5 +724,41 @@
     "encoding": "basis",
     "qubits": 20,
     "ms_per_vec": 4.9498
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 2,
+    "ms_per_vec": 0.124171
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 4,
+    "ms_per_vec": 0.127049
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 6,
+    "ms_per_vec": 0.129452
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 8,
+    "ms_per_vec": 0.128719
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 10,
+    "ms_per_vec": 0.167885
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 12,
+    "ms_per_vec": 0.177434
   }
 ]

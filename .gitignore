@@ -58,3 +58,14 @@ __pycache__/
 
 # coverage
 .coverage
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+comment.cut

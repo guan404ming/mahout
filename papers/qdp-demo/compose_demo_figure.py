@@ -47,11 +47,11 @@ for i, img in enumerate(imgs):
 from PIL import ImageDraw, ImageFont
 
 labels = [
-    "(a) Pipeline Exploration",
-    "(b) Framework Comparison",
-    "(c) Scaling Analysis",
+    "(a) Pipeline Demo",
+    "(b) Encoding Method",
+    "(c) Framework Comparison",
 ]
-label_h = 30
+label_h = 120
 labeled = []
 for img, label in zip(imgs, labels):
     w, h = img.size
@@ -59,12 +59,12 @@ for img, label in zip(imgs, labels):
     new_img.paste(img, (0, 0))
     draw = ImageDraw.Draw(new_img)
     try:
-        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 18)
+        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 56)
     except Exception:
         font = ImageFont.load_default()
     bbox = draw.textbbox((0, 0), label, font=font)
     tw = bbox[2] - bbox[0]
-    draw.text(((w - tw) / 2, h + 4), label, fill="black", font=font)
+    draw.text(((w - tw) / 2, h + 40), label, fill="black", font=font)
     labeled.append(new_img)
 
 # Stack horizontally with small gap
