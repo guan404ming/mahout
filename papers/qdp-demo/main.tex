@@ -31,7 +31,7 @@
 }
 
 \begin{document}
-\title{Apache Mahout QDP: GPU-Accelerated Quantum Data Processing}
+\title{Apache Mahout QDP: GPU-Accelerated Quantum Data Plane}
 
 \author{Guan-Ming Chiu}
 \affiliation{%
@@ -56,7 +56,7 @@
 \begin{abstract}
 Quantum machine learning (QML) pipelines require encoding classical data into quantum states before any computation can proceed.
 Existing frameworks such as PennyLane and Qiskit perform this encoding on the CPU, one vector at a time, creating a severe data loading bottleneck that dominates end-to-end training time.
-We demonstrate \textbf{QDP} (Quantum Data Processing), a GPU-accelerated data processing engine built with Rust and CUDA as part of Apache Mahout.
+We demonstrate \textbf{Apache Mahout QDP} (Quantum Data Plane), a GPU-accelerated data pipeline engine built with Rust and CUDA.
 QDP provides a complete pipeline from columnar storage formats (Parquet, Arrow) through normalization and quantum state encoding to zero-copy tensor output via DLPack, achieving orders-of-magnitude speedups over existing frameworks.
 Our interactive demonstration allows users to (1)~explore the end-to-end encoding pipeline with configurable parameters, (2)~compare latency and throughput against PennyLane and Qiskit in real time, and (3)~analyze performance scaling across qubit counts.
 \end{abstract}
@@ -118,7 +118,7 @@ Even with GPU-accelerated backends (e.g., Lightning.GPU, Aer GPU), the encoding 
 For a 16-qubit system, each state vector has $2^{16} = 65{,}536$ complex amplitudes; encoding thousands of training samples at this scale can take minutes with existing tools, while the subsequent quantum circuit simulation on GPU completes in seconds.
 This \emph{data starvation} problem, where the GPU sits idle waiting for encoded data, is analogous to the classical ML data loading bottleneck that motivated systems like PyTorch DataLoader~\cite{pytorch}, but has received almost no attention in the quantum computing community.
 
-We present \textbf{QDP} (Quantum Data Processing), a GPU-accelerated quantum data encoding engine that is part of Apache Mahout.
+We present Apache Mahout \textbf{QDP} (Quantum Data Plane), a GPU-accelerated data pipeline that treats quantum state encoding as a systems-level data processing problem, analogous to GPU-accelerated ETL in modern data warehouses.
 QDP addresses the data loading bottleneck with three key design decisions:
 \begin{enumerate}
 \item \textbf{Rust + CUDA core.} The entire pipeline, from file I/O through encoding to GPU memory placement, is implemented in Rust with custom CUDA kernels, eliminating Python overhead and GIL contention.
@@ -126,7 +126,7 @@ QDP addresses the data loading bottleneck with three key design decisions:
 \item \textbf{Zero-copy output.} Encoded quantum states are exposed to Python via DLPack~\cite{dlpack}, enabling zero-copy transfer to PyTorch tensors on GPU without any data movement.
 \end{enumerate}
 
-Together, these design choices yield \textbf{up to 1{,}000$\times$} speedup in data-to-state latency compared to PennyLane and Qiskit, as we demonstrate in our interactive system.
+Together, these design choices yield \textbf{10--1{,}000$\times$} speedup in data-to-state latency depending on encoding method, qubit count, and baseline framework, as we demonstrate in our interactive system.
 
 %% ============================================================
 %% 2. SYSTEM OVERVIEW
@@ -236,15 +236,14 @@ Changing the qubit count or encoding method in the sidebar dynamically updates t
 The third scenario (\autoref{fig:demo}c) presents quantitative performance data across Mahout QDP, PennyLane (both CPU and GPU backends), and Qiskit.
 A latency scaling chart plots per-vector encoding time on a log scale across 2--20 qubits, with a speedup table alongside.
 Switching the encoding method in the sidebar instantly updates both views.
-QDP's advantage is consistent across all methods and grows with qubit count, reaching up to 1{,}000$\times$ over PennyLane for angle encoding at 20 qubits.
+QDP's advantage is consistent across all methods, ranging from 9--24$\times$ over \texttt{lightning.gpu} to over 1{,}000$\times$ over \texttt{default.qubit}, depending on encoding and qubit count.
 
 %% ============================================================
 %% 4. PRELIMINARY EVALUATION
 %% ============================================================
 \section{Evaluation}
 
-We evaluate QDP on an NVIDIA A100 GPU (80\,GB) with amplitude, angle, and basis encoding across 2--20 qubits.
-We compare against PennyLane \texttt{default.qubit}, PennyLane \texttt{lightning.gpu} (CUDA-accelerated), and Qiskit (\texttt{initialize()} for amplitude, \texttt{RY}/\texttt{X} gates for angle/basis via \texttt{Statevector.from\_instruction}).
+We evaluate Apache Mahout QDP on an NVIDIA A100 GPU (80\,GB) with amplitude, angle, and basis encoding across 2--20 qubits, comparing against PennyLane (\texttt{default.qubit} and \texttt{lightning.gpu}) and Qiskit.
 All measurements include GPU transfer time.
 
 \textbf{Scaling.}
@@ -268,7 +267,7 @@ We compare QDP's encoded states against Qiskit across all three encoding methods
 \autoref{tab:correct} shows the maximum amplitude difference is below $10^{-16}$ (machine epsilon) in every case, confirming that QDP produces numerically identical quantum states despite using a fundamentally different computation path.
 
 \begin{table}[h]
-  \caption{Max amplitude difference: QDP vs Qiskit (float64).}
+  \caption{Max state-vector error: QDP vs Qiskit (float64).}
   \label{tab:correct}
   \begin{tabular}{lrrr}
     \toprule
@@ -284,24 +283,25 @@ We compare QDP's encoded states against Qiskit across all three encoding methods
 \end{table}
 
 \textbf{Case study: SVHN classification.}
-To validate end-to-end impact, we train an IQP-based variational quantum classifier on the SVHN dataset~\cite{svhn} (binary classification: digits 1 vs 7, 200 samples, 200 training iterations) across 4--10 qubits.
-We compare four configurations: QDP and PennyLane, each with CPU and GPU training backends.
-QDP performs one-shot encoding ($\sim$10\,ms total for all samples regardless of qubit count), while PennyLane re-encodes via IQP gates on every forward pass.
-All four configurations converge to identical test accuracy (0.675), confirming that QDP's fused kernel is functionally equivalent to PennyLane's gate-by-gate simulation in downstream QML tasks.
-\autoref{tab:e2e} shows QDP-GPU achieves up to 1.51$\times$ training speedup over PennyLane \texttt{lightning.gpu}.
-The speedup grows with qubit count because IQP circuits have $O(n^2)$ parametric gates; at 10 qubits, QDP eliminates 55 gate operations per forward pass.
+To validate end-to-end impact, we train an IQP-based variational quantum classifier on the SVHN dataset~\cite{svhn} (binary classification: digits 1 vs 7, 1{,}000 samples, 200 iterations) across 12--20 qubits on A100.
+QDP performs one-shot encoding ($\sim$10\,ms for all samples), while PennyLane re-encodes via IQP gates on every forward pass.
+Both converge to identical test accuracy (0.70).
+\autoref{tab:e2e} shows QDP-GPU achieves 1.26--1.50$\times$ training speedup over PennyLane \texttt{lightning.gpu}.
+The speedup comes from \emph{circuit simplification}: PennyLane embeds $O(n^2)$ IQP encoding gates into the circuit and re-executes them on every forward pass as part of circuit simulation, while QDP pre-computes encoded states and removes these gates entirely, allowing the training loop to run a simpler variational-only circuit.
+Our evaluation is limited to simulators (up to 20 qubits); larger QML workloads may exhibit different bottleneck profiles.
 
 \begin{table}[h]
-  \caption{End-to-end training time (seconds) on SVHN IQP classification. All configs achieve identical accuracy (0.675).}
+  \caption{End-to-end training time (seconds) on SVHN IQP classification (1{,}000 samples, A100). Both achieve identical accuracy (0.70).}
   \label{tab:e2e}
-  \begin{tabular}{rrrrr}
+  \begin{tabular}{rrrr}
     \toprule
     Qubits & PL-GPU & QDP-GPU & Speedup \\
     \midrule
-    4  & 44.8 & 36.4 & 1.23$\times$ \\
-    6  & 65.2 & 43.2 & 1.51$\times$ \\
-    8  & 80.7 & 59.4 & 1.36$\times$ \\
-    10 & 100.1 & 71.1 & 1.41$\times$ \\
+    12 & 159.5 & 106.0 & 1.50$\times$ \\
+    14 & 193.4 & 146.1 & 1.32$\times$ \\
+    16 & 220.6 & 147.5 & 1.49$\times$ \\
+    18 & 250.2 & 199.2 & 1.26$\times$ \\
+    20 & 354.3 & 243.5 & 1.45$\times$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -335,8 +335,9 @@ While these techniques are mature in the classical ML ecosystem, to our knowledg
 %% ============================================================
 \section{Conclusion}
 
-We demonstrated QDP, a GPU-accelerated quantum data processing engine that addresses the data loading bottleneck in QML pipelines.
-By implementing the full path from columnar storage to GPU-resident quantum states in Rust and CUDA, QDP achieves up to 1{,}000$\times$ lower latency than PennyLane and Qiskit, and 24$\times$ speedup over PennyLane's GPU-accelerated \texttt{lightning.gpu} backend at 20 qubits.
+We demonstrated Apache Mahout QDP, a GPU-accelerated quantum data pipeline that addresses the data loading bottleneck in QML pipelines.
+By implementing the full path from columnar storage to GPU-resident quantum states in Rust and CUDA, Apache Mahout QDP achieves 24$\times$ speedup over PennyLane's GPU-accelerated \texttt{lightning.gpu} backend at 20 qubits, and 10--1{,}000$\times$ over CPU-based backends depending on encoding method.
+Beyond raw encoding speed, QDP's one-shot encoding decouples state preparation from circuit execution, eliminating per-iteration gate overhead and consistently improving end-to-end training time.
 Key engineering contributions include dual-stream pipelining for overlapping host-to-device transfers with GPU encoding, a pinned buffer pool with RAII-based lifecycle management, and zero-copy DLPack interop with PyTorch.
 
 QDP is open source as part of Apache Mahout and supports cloud-native workflows through streaming Parquet ingestion from S3 and GCS.
