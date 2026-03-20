@@ -1,0 +1,327 @@
+% VLDB template version of 2020-08-03 enhances the ACM template, version 1.7.0:
+% https://www.acm.org/publications/proceedings-template
+
+\documentclass[sigconf, nonacm]{acmart}
+
+%% The following content must be adapted for the final version
+\newcommand\vldbdoi{XX.XX/XXX.XX}
+\newcommand\vldbpages{XXX-XXX}
+\newcommand\vldbvolume{19}
+\newcommand\vldbissue{1}
+\newcommand\vldbyear{2026}
+\newcommand\vldbauthors{\authors}
+\newcommand\vldbtitle{\shorttitle}
+\newcommand\vldbavailabilityurl{https://github.com/apache/mahout}
+% use 'plain' for review, 'empty' for camera ready
+\newcommand\vldbpagestyle{plain}
+
+% figure placement
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red!60!black},
+  frame=single,
+  breaklines=true,
+  columns=fullflexible,
+}
+
+\begin{document}
+\title{Apache Mahout QDP: GPU-Accelerated Quantum Data Processing}
+
+\author{Guan-Ming Chiu}
+\affiliation{%
+  \institution{National Taiwan University}
+  \city{Taipei}
+  \country{Taiwan}
+}
+\email{gmchiu@arbor.ee.ntu.edu.tw}
+
+% Add more authors here
+% \author{Name}
+% \affiliation{%
+%   \institution{Institution}
+%   \city{City}
+%   \country{Country}
+% }
+% \email{email@example.com}
+
+%%
+%% Abstract
+%%
+\begin{abstract}
+Quantum machine learning (QML) pipelines require encoding classical data into quantum states before any computation can proceed.
+Existing frameworks such as PennyLane and Qiskit perform this encoding on the CPU, one vector at a time, creating a severe data loading bottleneck that dominates end-to-end training time.
+We demonstrate \textbf{QDP} (Quantum Data Processing), a GPU-accelerated data processing engine built with Rust and CUDA as part of Apache Mahout.
+QDP provides a complete pipeline from columnar storage formats (Parquet, Arrow) through normalization and quantum state encoding to zero-copy tensor output via DLPack, achieving orders-of-magnitude speedups over existing frameworks.
+Our interactive demonstration allows users to (1)~explore the end-to-end encoding pipeline with configurable parameters, (2)~compare latency and throughput against PennyLane and Qiskit in real time, and (3)~analyze performance scaling across qubit counts.
+\end{abstract}
+
+\maketitle
+
+%%% do not modify the following VLDB block %%
+%%% VLDB block start %%%
+\pagestyle{\vldbpagestyle}
+\begingroup\small\noindent\raggedright\textbf{PVLDB Reference Format:}\\
+\vldbauthors. \vldbtitle. PVLDB, \vldbvolume(\vldbissue): \vldbpages, \vldbyear.\\
+\href{https://doi.org/\vldbdoi}{doi:\vldbdoi}
+\endgroup
+\begingroup
+\renewcommand\thefootnote{}\footnote{\noindent
+This work is licensed under the Creative Commons BY-NC-ND 4.0 International License. Visit \url{https://creativecommons.org/licenses/by-nc-nd/4.0/} to view a copy of this license. For any use beyond those covered by this license, obtain permission by emailing \href{mailto:info@vldb.org}{info@vldb.org}. Copyright is held by the owner/author(s). Publication rights licensed to the VLDB Endowment. \\
+\raggedright Proceedings of the VLDB Endowment, Vol. \vldbvolume, No. \vldbissue\ %
+ISSN 2150-8097. \\
+\href{https://doi.org/\vldbdoi}{doi:\vldbdoi} \\
+}\addtocounter{footnote}{-1}\endgroup
+%%% VLDB block end %%%
+
+%%% do not modify the following VLDB block %%
+%%% VLDB block start %%%
+\ifdefempty{\vldbavailabilityurl}{}{
+\vspace{.3cm}
+\begingroup\small\noindent\raggedright\textbf{PVLDB Artifact Availability:}\\
+The source code, data, and/or other artifacts have been made available at \url{\vldbavailabilityurl}.
+\endgroup
+}
+%%% VLDB block end %%%
+
+%% ============================================================
+%% 1. INTRODUCTION
+%% ============================================================
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/architecture}
+  \caption{QDP pipeline architecture. Classical data flows from columnar storage through Rust-based readers and preprocessing into CUDA-accelerated encoding kernels, producing GPU-resident quantum state tensors via DLPack.}
+  \label{fig:architecture}
+\end{figure}
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\linewidth,height=4.2cm,keepaspectratio]{figures/demo}
+  \vspace{-0.3cm}
+  \caption{QDP interactive demonstration. (a)~Pipeline exploration with configurable encoding parameters and live execution. (b)~Framework comparison showing latency and throughput bar charts against PennyLane and Qiskit. (c)~Scaling analysis across qubit counts with log-scale performance curves.}
+  \label{fig:demo}
+\end{figure*}
+
+\section{Introduction}
+
+Quantum machine learning (QML) combines quantum computing with classical machine learning to explore potential computational advantages~\cite{biamonte2017, schuld2021}.
+A critical step in every QML pipeline is \emph{quantum data encoding}: transforming classical feature vectors into quantum states that can be processed by parameterized quantum circuits.
+Common encoding strategies include amplitude encoding, angle encoding, basis encoding, and IQP-style encoding~\cite{schuld2021}.
+
+In current practice, frameworks such as PennyLane~\cite{pennylane} and Qiskit~\cite{qiskit} implement encoding by constructing and simulating a quantum circuit for each input vector.
+Even with GPU-accelerated backends (e.g., Lightning.GPU, Aer GPU), the encoding step remains sequential and per-vector, creating a bottleneck that grows with qubit count.
+For a 16-qubit system, each state vector has $2^{16} = 65{,}536$ complex amplitudes; encoding thousands of training samples at this scale can take minutes with existing tools, while the subsequent quantum circuit simulation on GPU completes in seconds.
+This \emph{data starvation} problem, where the GPU sits idle waiting for encoded data, is analogous to the classical ML data loading bottleneck that motivated systems like PyTorch DataLoader~\cite{pytorch}, but has received almost no attention in the quantum computing community.
+
+We present \textbf{QDP} (Quantum Data Processing), a GPU-accelerated quantum data encoding engine that is part of Apache Mahout.
+QDP addresses the data loading bottleneck with three key design decisions:
+\begin{enumerate}
+\item \textbf{Rust + CUDA core.} The entire pipeline, from file I/O through encoding to GPU memory placement, is implemented in Rust with custom CUDA kernels, eliminating Python overhead and GIL contention.
+\item \textbf{Columnar format integration.} QDP reads directly from Parquet~\cite{parquet} and Arrow IPC~\cite{arrow} files using native Rust readers, avoiding redundant serialization and deserialization.
+\item \textbf{Zero-copy output.} Encoded quantum states are exposed to Python via DLPack~\cite{dlpack}, enabling zero-copy transfer to PyTorch tensors on GPU without any data movement.
+\end{enumerate}
+
+Together, these design choices yield \textbf{up to three orders of magnitude} speedup in data-to-state latency compared to PennyLane and Qiskit, as we demonstrate in our interactive system.
+
+%% ============================================================
+%% 2. SYSTEM OVERVIEW
+%% ============================================================
+\section{System Overview}
+
+\autoref{fig:architecture} shows the QDP pipeline architecture.
+The system consists of four stages connected by an asynchronous buffer pool.
+
+\textbf{Reader.}
+The reader stage ingests data from multiple formats: Apache Parquet, Arrow IPC, NumPy \texttt{.npy}, PyTorch \texttt{.pt}, and TensorFlow TFRecord.
+For Parquet and Arrow, QDP uses native Rust implementations (via the \texttt{arrow-rs} and \texttt{parquet} crates) that decode columnar data directly into contiguous memory buffers, avoiding Python-based deserialization.
+A \emph{streaming} mode for Parquet reads row groups incrementally, enabling processing of datasets larger than available memory.
+QDP also supports remote object storage URLs (\texttt{s3://}, \texttt{gs://}) via the \texttt{object\_store} crate, allowing direct ingestion from cloud data lakes without intermediate downloads.
+
+\textbf{Preprocessing.}
+Raw feature vectors are normalized according to the requirements of each encoding method.
+For amplitude encoding, this involves L2 normalization to ensure $\sum_i |a_i|^2 = 1$.
+Preprocessing runs on the CPU using multi-threaded Rust code and writes results into pinned host memory for efficient DMA transfer to the GPU.
+
+\textbf{GPU Encoding.}
+Existing frameworks implement encoding by simulating a quantum circuit through sequential gate applications to a state vector.
+QDP instead provides fused CUDA kernels that directly compute the encoded state vector from classical input data, bypassing circuit simulation entirely and supporting native batching across multiple samples in one kernel launch.
+QDP supports four methods: \emph{amplitude} (normalize as quantum amplitudes), \emph{angle} (map features to rotation angles), \emph{basis} (encode integer as $|k\rangle$), and \emph{IQP} (entangling interactions between qubits).
+
+\textbf{Zero-Copy Output.}
+Encoded complex-valued state vectors remain in GPU memory and are wrapped in a DLPack capsule~\cite{dlpack}.
+Python consumers call \texttt{torch.from\_dlpack()} to obtain a PyTorch tensor backed by the same GPU allocation, with no host-device copy or memory duplication.
+Ownership is managed through DLPack's reference-counted deleter protocol, ensuring the GPU buffer is freed only after all consumers release it.
+
+\subsection{Pipeline Infrastructure}
+
+Three subsystems maximize GPU utilization:
+
+\textbf{Dual-stream pipeline.}
+QDP allocates two CUDA streams: one for host-to-device memory copies and one for compute kernels.
+A CUDA event synchronizes the streams: the copy stream signals completion via \texttt{cudaEventRecord}, and the compute stream waits via \texttt{cudaStreamWaitEvent} before launching the encoding kernel.
+This double-buffered design ensures that batch $i{+}1$ is being transferred while batch $i$ is being encoded, hiding transfer latency behind compute.
+
+\textbf{Pinned buffer pool.}
+Repeated \texttt{cudaHostAlloc}/\texttt{cudaFreeHost} calls are expensive (each triggers a kernel-mode transition).
+QDP pre-allocates a fixed-size pool of page-locked host buffers at initialization.
+Buffers are checked out via RAII handles (\texttt{PinnedBufferHandle}) and automatically returned on drop, amortizing allocation cost across all batches.
+A condition variable blocks producers when all buffers are in use, providing natural backpressure.
+
+\textbf{Overlap tracker.}
+An instrumentation layer records timestamps for copy and compute events on each batch, computing the fraction of time that both streams are active simultaneously.
+This metric, exposed through the Python API, helps users identify whether their workload is transfer-bound or compute-bound and tune batch sizes accordingly.
+
+\subsection{Programming Interface}
+
+QDP exposes two Python APIs. The \textbf{one-shot API} encodes an entire file into a single GPU tensor, suitable for small datasets that fit in memory:
+
+\begin{lstlisting}
+import qumat.qdp as qdp
+engine = qdp.QdpEngine(device_id=0)
+qt = engine.encode("data.parquet", num_qubits=16,
+                   encoding_method="amplitude")
+tensor = torch.from_dlpack(qt)  # (N, 65536) complex64
+\end{lstlisting}
+
+\noindent The \textbf{iterator API} provides DataLoader-style batching with a builder pattern, streaming encoded batches for large-scale training loops:
+
+\begin{lstlisting}
+loader = (qdp.QuantumDataLoader(device_id=0)
+          .qubits(16).encoding("amplitude")
+          .batches(100, size=64)
+          .source_file("data.parquet"))
+for batch in loader:
+    state = torch.from_dlpack(batch)  # (64, 65536)
+\end{lstlisting}
+
+\noindent The iterator internally drives the dual-stream pipeline (\S2.1), releasing the Python GIL during Rust/CUDA execution so that model training can proceed concurrently.
+Input sources include local files (Parquet, Arrow, NumPy, PyTorch, TFRecord), in-memory Python lists, NumPy arrays, PyTorch tensors, and remote URLs (\texttt{s3://}, \texttt{gs://}).
+A \texttt{QdpBenchmark} builder provides one-call throughput and latency measurement without requiring manual timing code.
+
+%% ============================================================
+%% 3. DEMONSTRATION OVERVIEW
+%% ============================================================
+\section{Demonstration}
+
+We provide an interactive web-based demonstration built with Streamlit that showcases QDP's capabilities through three scenarios.
+The demonstration runs on a machine equipped with an NVIDIA GPU and allows attendees to interact with the system in real time.
+
+\subsection{Scenario 1: Pipeline Exploration}
+
+In the first scenario, attendees explore the end-to-end encoding pipeline (\autoref{fig:demo}a).
+The interface displays the pipeline architecture and allows users to configure:
+\begin{itemize}
+\item \textbf{Encoding method}: amplitude, angle, basis, or IQP.
+\item \textbf{Qubit count}: adjustable from 2 to 20 via a slider, dynamically updating the state vector dimension ($2^n$) and estimated data size.
+\item \textbf{Batch parameters}: batch size (1--256) and number of batches (10--500).
+\end{itemize}
+Clicking ``Run Encode'' triggers a \emph{real-time} encoding pass through the QDP engine on the attached GPU, displaying the measured per-vector latency and aggregate throughput.
+Attendees can change parameters and re-run instantly, observing how encoding cost varies with qubit count and method.
+This scenario demonstrates that QDP handles diverse encoding methods with sub-millisecond per-vector latency.
+
+\subsection{Scenario 2: Framework Comparison}
+
+The second scenario provides a live head-to-head comparison between QDP, PennyLane, and Qiskit (\autoref{fig:demo}b).
+Clicking ``Run Benchmark'' executes all three frameworks on the same workload in real time, with progress indicators as each framework completes, and dynamically renders:
+\begin{itemize}
+\item \textbf{Latency comparison}: a bar chart of milliseconds per vector (log scale), showing QDP's advantage.
+\item \textbf{Throughput comparison}: vectors per second for each framework.
+\item \textbf{Speedup metrics}: computed as the ratio of competitor latency to QDP latency (up to 1{,}000$\times$ depending on encoding and qubit count).
+\end{itemize}
+Attendees can adjust the qubit count and encoding method to observe how the performance gap widens at higher qubit counts, where PennyLane and Qiskit's per-vector overhead grows exponentially while QDP's GPU-parallel approach scales gracefully.
+
+\subsection{Scenario 3: Scaling Analysis}
+
+The third scenario presents scaling curves across qubit counts from 4 to 20 (\autoref{fig:demo}c).
+Two line charts show latency and throughput trends for all three frameworks on a logarithmic scale.
+A summary table provides exact speedup ratios at each qubit count.
+This scenario allows attendees to understand the asymptotic behavior: QDP maintains practical throughput ($>$3{,}000 vectors/sec) even at 20 qubits ($2^{20} = 1{,}048{,}576$ amplitudes), while PennyLane and Qiskit drop below 3 vectors/sec at the same scale.
+
+% figure* moved to top of Section 3 for placement
+
+%% ============================================================
+%% 4. PRELIMINARY EVALUATION
+%% ============================================================
+\section{Evaluation}
+
+We evaluate QDP on an NVIDIA A100 GPU (80\,GB) with amplitude, angle, and basis encoding across 2--20 qubits.
+We compare against PennyLane \texttt{default.qubit}, PennyLane \texttt{lightning.gpu} (CUDA-accelerated), and Qiskit (\texttt{initialize()} for amplitude, \texttt{RY}/\texttt{X} gates for angle/basis via \texttt{Statevector.from\_instruction}).
+All measurements include GPU transfer time.
+
+\textbf{Scaling.}
+\autoref{fig:eval} shows latency scaling across qubit counts for all three encoding methods.
+QDP consistently achieves the lowest latency across all configurations, even against PennyLane's GPU-accelerated \texttt{lightning.gpu} backend.
+For angle encoding at 20 qubits, QDP (0.27\,ms) is 1{,}018$\times$ faster than PennyLane \texttt{default.qubit} (274\,ms) and 1{,}247$\times$ faster than Qiskit (335\,ms).
+Even compared to \texttt{lightning.gpu} (6.5\,ms at 20 qubits), QDP achieves 24$\times$ lower latency.
+Qiskit's circuit-based amplitude encoding (\texttt{initialize()}) grows exponentially, reaching 171\,ms at 10 qubits while QDP remains at 0.11\,ms.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/eval_scaling}
+  \caption{Data-to-state latency scaling (ms/vector, log scale) for amplitude, angle, and basis encoding across four frameworks. QDP (orange) achieves orders-of-magnitude lower latency than both CPU and GPU backends of existing frameworks.}
+  \label{fig:eval}
+\end{figure}
+
+\textbf{IQP encoding.}
+QDP implements a Fast Walsh-Hadamard Transform (FWT) optimization for IQP encoding, reducing complexity from $O(4^n)$ to $O(n \cdot 2^n)$.
+Batch encoding with FWT achieves 135$\times$ speedup over the naive kernel at 10 qubits, and scales to 20 qubits at 12.3\,ms/vector.
+
+%% ============================================================
+%% 5. RELATED WORK
+%% ============================================================
+\section{Related Work}
+
+\textbf{Quantum data encoding.}
+Schuld and Petruccione~\cite{schuld2021} provide a comprehensive survey of encoding strategies for QML.
+Amplitude encoding is the most commonly used method for variational classifiers, as it can represent $2^n$ features with $n$ qubits, but requires $O(2^n)$ operations for state preparation.
+Angle and basis encodings trade expressiveness for simpler circuit constructions~\cite{biamonte2017}.
+Preskill~\cite{preskill2018} discusses the challenges of the NISQ era, where limited qubit counts and noise make efficient classical preprocessing even more critical for practical QML workloads.
+
+\textbf{Quantum software frameworks.}
+PennyLane~\cite{pennylane} provides automatic differentiation for hybrid quantum-classical programs and supports multiple backend simulators.
+Qiskit~\cite{qiskit} offers a comprehensive toolchain for circuit construction, transpilation, and execution on IBM hardware.
+Both treat data encoding as a preprocessing step without GPU acceleration, constructing states one vector at a time on the CPU.
+Neither framework batches encoding or leverages GPU parallelism for state preparation.
+QuClassi~\cite{quclassi} demonstrated hybrid quantum-classical architectures at MLSys but did not address the data loading bottleneck.
+Q2O~\cite{q2o} applied quantum optimization to database query planning at VLDB 2025, demonstrating growing interest in quantum-data systems in the database community.
+
+\textbf{Classical data loading systems.}
+The data starvation problem is well-studied in classical ML: PyTorch DataLoader~\cite{pytorch} introduced multi-process prefetching and pinned memory transfers, NVIDIA DALI provides GPU-accelerated image decoding, and tf.data pipelines overlap I/O with computation.
+QDP brings analogous design principles to the quantum data encoding domain, including asynchronous prefetching, pinned buffer pooling, dual-stream pipelining, and zero-copy tensor output.
+While these techniques are mature in the classical ML ecosystem, to our knowledge QDP is the first system to apply them to quantum state encoding.
+
+%% ============================================================
+%% 6. CONCLUSION
+%% ============================================================
+\section{Conclusion}
+
+We demonstrated QDP, a GPU-accelerated quantum data processing engine that addresses the data loading bottleneck in QML pipelines.
+By implementing the full path from columnar storage to GPU-resident quantum states in Rust and CUDA, QDP achieves up to three orders of magnitude lower latency than PennyLane and Qiskit, and 24$\times$ speedup over PennyLane's GPU-accelerated \texttt{lightning.gpu} backend at 20 qubits.
+Key engineering contributions include dual-stream pipelining for overlapping host-to-device transfers with GPU encoding, a pinned buffer pool with RAII-based lifecycle management, and zero-copy DLPack interop with PyTorch.
+
+QDP is open source as part of Apache Mahout and supports cloud-native workflows through streaming Parquet ingestion from S3 and GCS.
+Future directions include:
+(1)~multi-GPU encoding with NCCL-based distribution for large-scale datasets;
+(2)~AMD ROCm/HIP backend for vendor-neutral GPU acceleration;
+(3)~broader cloud data lake support including Azure Blob Storage, MinIO, and Delta Lake/Iceberg table formats;
+(4)~parameterized circuit encoding where gate parameters depend on input data;
+and (5)~integration with quantum hardware backends for direct state preparation on NISQ devices.
+
+%% ============================================================
+%% ACKNOWLEDGMENTS & REFERENCES
+%% ============================================================
+
+\begin{acks}
+This work is part of the Apache Mahout project. We thank the Apache Software Foundation and the Mahout community for their support.
+\end{acks}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}
+\endinput

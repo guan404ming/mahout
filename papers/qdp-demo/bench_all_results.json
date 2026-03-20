@@ -1,0 +1,764 @@
+[
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 2,
+    "ms_per_vec": 1.3265
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 4,
+    "ms_per_vec": 1.1089
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 6,
+    "ms_per_vec": 1.1296
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 8,
+    "ms_per_vec": 1.1982
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 10,
+    "ms_per_vec": 1.2317
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 12,
+    "ms_per_vec": 1.2393
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 14,
+    "ms_per_vec": 1.5046
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 16,
+    "ms_per_vec": 1.9819
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 18,
+    "ms_per_vec": 6.0923
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "amplitude",
+    "qubits": 20,
+    "ms_per_vec": 13.5188
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 2,
+    "ms_per_vec": 1.7044
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 2,
+    "ms_per_vec": 0.4679
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 4,
+    "ms_per_vec": 2.4578
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 4,
+    "ms_per_vec": 0.587
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 6,
+    "ms_per_vec": 3.297
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 6,
+    "ms_per_vec": 0.8015
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 8,
+    "ms_per_vec": 4.7584
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 8,
+    "ms_per_vec": 0.9761
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 10,
+    "ms_per_vec": 5.9062
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 10,
+    "ms_per_vec": 1.2164
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 12,
+    "ms_per_vec": 7.3326
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 12,
+    "ms_per_vec": 1.6922
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 14,
+    "ms_per_vec": 11.341
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 14,
+    "ms_per_vec": 3.4244
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 16,
+    "ms_per_vec": 19.1663
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 16,
+    "ms_per_vec": 11.2409
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 18,
+    "ms_per_vec": 67.9792
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 18,
+    "ms_per_vec": 53.9235
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "angle",
+    "qubits": 20,
+    "ms_per_vec": 273.5738
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "angle",
+    "qubits": 20,
+    "ms_per_vec": 335.0462
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 2,
+    "ms_per_vec": 1.013
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 2,
+    "ms_per_vec": 0.3848
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 4,
+    "ms_per_vec": 1.0027
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 4,
+    "ms_per_vec": 0.4481
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 6,
+    "ms_per_vec": 1.0361
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 6,
+    "ms_per_vec": 0.5653
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 8,
+    "ms_per_vec": 1.0625
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 8,
+    "ms_per_vec": 0.6714
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 10,
+    "ms_per_vec": 1.0632
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 10,
+    "ms_per_vec": 0.8115
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 12,
+    "ms_per_vec": 1.1113
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 12,
+    "ms_per_vec": 1.0179
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 14,
+    "ms_per_vec": 1.2318
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 14,
+    "ms_per_vec": 1.9438
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 16,
+    "ms_per_vec": 1.762
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 16,
+    "ms_per_vec": 5.8413
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 18,
+    "ms_per_vec": 3.9911
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 18,
+    "ms_per_vec": 29.6243
+  },
+  {
+    "framework": "PennyLane",
+    "encoding": "basis",
+    "qubits": 20,
+    "ms_per_vec": 11.985
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "basis",
+    "qubits": 20,
+    "ms_per_vec": 179.6997
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 2,
+    "ms_per_vec": 0.5353
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 4,
+    "ms_per_vec": 2.1387
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 6,
+    "ms_per_vec": 1.1934
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 8,
+    "ms_per_vec": 1.3042
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 10,
+    "ms_per_vec": 1.0811
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 12,
+    "ms_per_vec": 0.1969
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 14,
+    "ms_per_vec": 0.228
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 16,
+    "ms_per_vec": 0.2728
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 18,
+    "ms_per_vec": 1.4573
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "iqp",
+    "qubits": 20,
+    "ms_per_vec": 12.2857
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 2,
+    "ms_per_vec": 0.7372
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 4,
+    "ms_per_vec": 0.8772
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 6,
+    "ms_per_vec": 1.0759
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 8,
+    "ms_per_vec": 4.4973
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 10,
+    "ms_per_vec": 170.6547
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 12,
+    "ms_per_vec": 1236.6887
+  },
+  {
+    "framework": "Qiskit",
+    "encoding": "amplitude",
+    "qubits": 14,
+    "ms_per_vec": 76281.6465
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 2,
+    "ms_per_vec": 0.001697
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 4,
+    "ms_per_vec": 0.001951
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 6,
+    "ms_per_vec": 0.001585
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 8,
+    "ms_per_vec": 0.001624
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 10,
+    "ms_per_vec": 0.001841
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 12,
+    "ms_per_vec": 0.001812
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 2,
+    "ms_per_vec": 0.002101
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 4,
+    "ms_per_vec": 0.001509
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 6,
+    "ms_per_vec": 0.001616
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 8,
+    "ms_per_vec": 0.001758
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 10,
+    "ms_per_vec": 0.001504
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 12,
+    "ms_per_vec": 0.001279
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 14,
+    "ms_per_vec": 0.002921
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 16,
+    "ms_per_vec": 0.009631
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 18,
+    "ms_per_vec": 0.053924
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "angle",
+    "qubits": 20,
+    "ms_per_vec": 0.268789
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 14,
+    "ms_per_vec": 0.001392
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 16,
+    "ms_per_vec": 0.003173
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 18,
+    "ms_per_vec": 0.052514
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "basis",
+    "qubits": 20,
+    "ms_per_vec": 0.259146
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 2,
+    "ms_per_vec": 0.110151
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 4,
+    "ms_per_vec": 0.05644
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 6,
+    "ms_per_vec": 0.078853
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 8,
+    "ms_per_vec": 0.096624
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 10,
+    "ms_per_vec": 0.113078
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 12,
+    "ms_per_vec": 0.094303
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 14,
+    "ms_per_vec": 0.02288
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 16,
+    "ms_per_vec": 0.096519
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 18,
+    "ms_per_vec": 0.391062
+  },
+  {
+    "framework": "Mahout",
+    "encoding": "amplitude",
+    "qubits": 20,
+    "ms_per_vec": 1.511169
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 2,
+    "ms_per_vec": 1.6733
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 4,
+    "ms_per_vec": 1.3827
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 6,
+    "ms_per_vec": 1.4172
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 8,
+    "ms_per_vec": 1.4109
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 10,
+    "ms_per_vec": 1.4213
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 12,
+    "ms_per_vec": 1.4585
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 14,
+    "ms_per_vec": 1.5731
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 16,
+    "ms_per_vec": 2.1048
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 18,
+    "ms_per_vec": 3.3829
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "amplitude",
+    "qubits": 20,
+    "ms_per_vec": 10.8737
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 2,
+    "ms_per_vec": 1.2714
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 4,
+    "ms_per_vec": 1.377
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 6,
+    "ms_per_vec": 1.4519
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 8,
+    "ms_per_vec": 1.538
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 10,
+    "ms_per_vec": 1.6698
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 12,
+    "ms_per_vec": 1.7392
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 14,
+    "ms_per_vec": 1.9103
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 16,
+    "ms_per_vec": 2.2045
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 18,
+    "ms_per_vec": 3.2697
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "angle",
+    "qubits": 20,
+    "ms_per_vec": 6.458
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 2,
+    "ms_per_vec": 1.1507
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 4,
+    "ms_per_vec": 1.1355
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 6,
+    "ms_per_vec": 1.1403
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 8,
+    "ms_per_vec": 1.1374
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 10,
+    "ms_per_vec": 1.1885
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 12,
+    "ms_per_vec": 1.2416
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 14,
+    "ms_per_vec": 1.3941
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 16,
+    "ms_per_vec": 1.4306
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 18,
+    "ms_per_vec": 2.4018
+  },
+  {
+    "framework": "PennyLane (lightning.gpu)",
+    "encoding": "basis",
+    "qubits": 20,
+    "ms_per_vec": 4.9498
+  }
+]
