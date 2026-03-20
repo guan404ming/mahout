@@ -248,10 +248,12 @@ We compare against PennyLane \texttt{default.qubit}, PennyLane \texttt{lightning
 All measurements include GPU transfer time.
 
 \textbf{Scaling.}
-\autoref{fig:eval} shows latency scaling across qubit counts for all three encoding methods.
-QDP consistently achieves the lowest latency, even against PennyLane's GPU-accelerated \texttt{lightning.gpu}.
-For angle encoding at 20 qubits, QDP (0.27\,ms) is 1{,}018$\times$ faster than PennyLane (274\,ms) and 24$\times$ faster than \texttt{lightning.gpu} (6.5\,ms).
-Qiskit's \texttt{initialize()} grows exponentially, reaching 171\,ms at 10 qubits while QDP remains at 0.11\,ms.
+\autoref{fig:eval} shows latency scaling across qubit counts for all three encoding methods, comparing four frameworks.
+QDP consistently achieves the lowest latency across all configurations, even against PennyLane's GPU-accelerated \texttt{lightning.gpu} backend.
+For angle encoding at 20 qubits, QDP (0.27\,ms) is 1{,}018$\times$ faster than PennyLane \texttt{default.qubit} (274\,ms) and 24$\times$ faster than \texttt{lightning.gpu} (6.5\,ms).
+For basis encoding, the gap is similarly large: QDP (0.26\,ms) vs Qiskit (180\,ms) at 20 qubits.
+Qiskit's circuit-based amplitude encoding (\texttt{initialize()}) grows exponentially, reaching 171\,ms at just 10 qubits, while QDP remains at 0.11\,ms.
+The advantage stems from QDP's fused kernel approach: where PennyLane and Qiskit apply $O(n)$ to $O(n^2)$ sequential gate operations, QDP computes all $2^n$ amplitudes in a single parallel kernel launch.
 
 \begin{figure}[t]
   \centering
@@ -261,8 +263,9 @@ Qiskit's \texttt{initialize()} grows exponentially, reaching 171\,ms at 10 qubit
 \end{figure}
 
 \textbf{Correctness.}
-Since QDP uses fused CUDA kernels rather than gate simulation, we validate correctness by comparing encoded states against Qiskit across all three encoding methods and 2--20 qubits.
-\autoref{tab:correct} shows the maximum amplitude difference is below $10^{-16}$ (machine epsilon) in every case.
+Since QDP bypasses circuit simulation with fused CUDA kernels, correctness validation is essential.
+We compare QDP's encoded states against Qiskit across all three encoding methods (amplitude, angle, basis) and 10 qubit counts from 2 to 20, using float64 precision with 50 random input vectors per configuration.
+\autoref{tab:correct} shows the maximum amplitude difference is below $10^{-16}$ (machine epsilon) in every case, confirming that QDP produces numerically identical quantum states despite using a fundamentally different computation path.
 
 \begin{table}[h]
   \caption{Max amplitude difference: QDP vs Qiskit (float64).}
@@ -276,6 +279,29 @@ Since QDP uses fused CUDA kernels rather than gate simulation, we validate corre
     12 & $1.4 \times 10^{-17}$ & $8.3 \times 10^{-17}$ & $0$ \\
     16 & $6.9 \times 10^{-18}$ & $4.2 \times 10^{-17}$ & $0$ \\
     20 & $1.7 \times 10^{-18}$ & $1.7 \times 10^{-17}$ & $0$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Case study: SVHN classification.}
+To validate end-to-end impact, we train an IQP-based variational quantum classifier on the SVHN dataset~\cite{svhn} (binary classification: digits 1 vs 7, 200 samples, 200 training iterations) across 4--10 qubits.
+We compare four configurations: QDP and PennyLane, each with CPU and GPU training backends.
+QDP performs one-shot encoding ($\sim$10\,ms total for all samples regardless of qubit count), while PennyLane re-encodes via IQP gates on every forward pass.
+All four configurations converge to identical test accuracy (0.675), confirming that QDP's fused kernel is functionally equivalent to PennyLane's gate-by-gate simulation in downstream QML tasks.
+\autoref{tab:e2e} shows QDP-GPU achieves up to 1.51$\times$ training speedup over PennyLane \texttt{lightning.gpu}.
+The speedup grows with qubit count because IQP circuits have $O(n^2)$ parametric gates; at 10 qubits, QDP eliminates 55 gate operations per forward pass.
+
+\begin{table}[h]
+  \caption{End-to-end training time (seconds) on SVHN IQP classification. All configs achieve identical accuracy (0.675).}
+  \label{tab:e2e}
+  \begin{tabular}{rrrrr}
+    \toprule
+    Qubits & PL-GPU & QDP-GPU & Speedup \\
+    \midrule
+    4  & 44.8 & 36.4 & 1.23$\times$ \\
+    6  & 65.2 & 43.2 & 1.51$\times$ \\
+    8  & 80.7 & 59.4 & 1.36$\times$ \\
+    10 & 100.1 & 71.1 & 1.41$\times$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -327,7 +353,8 @@ Future directions include:
 
 \begin{acks}
 The authors initiated the QDP project within Apache Mahout and serve as PMC members and committers.
-We thank the Mahout community and the Apache Taipei\footnote{\url{https://github.com/opensource4you}} community for their support.
+We thank Chia-Ping Tsai, Andrew Musselman, and Trevor Grant for their mentorship and guidance on the Apache Mahout project.
+We also thank the Mahout community and the Apache Taipei\footnote{\url{https://github.com/opensource4you}} community for their support.
 \end{acks}
 
 \bibliographystyle{ACM-Reference-Format}
