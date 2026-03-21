@@ -69,11 +69,21 @@
 }
 \email{jiekaichang@apache.org}
 
+\author{Ming-Syan Chen}
+\authornote{Corresponding author}
+\affiliation{%
+  \institution{National Taiwan University}
+  \city{Taipei}
+  \country{Taiwan}
+}
+\email{mschen@ntu.edu.tw}
+
 %%
 %% Abstract
 %%
 \begin{abstract}
-Quantum machine learning (QML) pipelines require encoding classical data into quantum states before any computation can proceed.
+Data preprocessing bottlenecks increasingly limit GPU-accelerated ML pipelines.
+This problem is especially severe in quantum machine learning (QML), where classical data must be encoded into quantum states before any computation can proceed.
 Existing frameworks such as PennyLane and Qiskit construct encoding circuits on the CPU, one vector at a time, creating a severe data loading bottleneck that dominates end-to-end training time.
 We demonstrate \textbf{Apache Mahout QDP} (Quantum Data Plane), a GPU-accelerated data pipeline engine built with Rust and CUDA.
 QDP provides a complete pipeline from columnar storage formats (Parquet, Arrow) through normalization and quantum state encoding to zero-copy tensor output via DLPack, achieving orders-of-magnitude speedups over existing frameworks.
@@ -122,14 +132,13 @@ The source code, data, and/or other artifacts have been made available at \url{\
 \section{Introduction}
 
 Quantum machine learning (QML) combines quantum computing with classical machine learning to explore potential computational advantages~\cite{biamonte2017, schuld2021}.
-A critical step in every QML pipeline is \emph{quantum data encoding}: transforming classical feature vectors into quantum states that can be processed by parameterized quantum circuits.
-Common encoding strategies include amplitude encoding, angle encoding, basis encoding, and IQP-style encoding~\cite{schuld2021}.
+A critical step in every QML pipeline is \emph{quantum data encoding}: transforming classical feature vectors into quantum states that can be processed by parameterized quantum circuits~\cite{schuld2021}.
 
 In current practice, frameworks such as PennyLane~\cite{pennylane} and Qiskit~\cite{qiskit} implement encoding by constructing and simulating a quantum circuit for each input vector.
-Even with GPU-accelerated backends (e.g., Lightning.GPU, Aer GPU) that leverage high-performance SDKs like NVIDIA cuQuantum~\cite{cuquantum2023}, the encoding step remains sequential and per-vector, creating a bottleneck that grows with qubit count.
+Even with GPU-accelerated backends (e.g., Lightning.GPU, Aer GPU) powered by NVIDIA cuQuantum~\cite{cuquantum2023}, the encoding step remains sequential and per-vector, creating a bottleneck that grows with qubit count.
 While cuQuantum dramatically accelerates the underlying circuit simulation, a system-level pipeline is still required at the data loading layer to resolve this bottleneck before simulation can even begin.
-For a 16-qubit system, each state vector has $2^{16} = 65{,}536$ complex amplitudes; encoding thousands of training samples at this scale can take minutes with existing tools, while the subsequent quantum circuit simulation on GPU completes in seconds.
 This \emph{data starvation} problem, where the GPU sits idle waiting for encoded data, is analogous to the classical ML data loading bottleneck that motivated systems like PyTorch DataLoader~\cite{pytorch}, but has received almost no attention in the quantum computing community.
+GPU-accelerated data pipelines such as RAPIDS~\cite{rapids2024} have proven effective for classical ML workloads, yet no equivalent exists for quantum data encoding.
 
 We present Apache Mahout \textbf{QDP} (Quantum Data Plane), a GPU-accelerated data pipeline that treats quantum state encoding as a systems-level data processing problem, analogous to GPU-accelerated ETL in modern data warehouses.
 QDP addresses this bottleneck through three key design choices:
@@ -142,7 +151,6 @@ QDP addresses this bottleneck through three key design choices:
 Together, these design choices yield \textbf{7--1{,}000$\times$} speedup in data-to-state latency depending on encoding method, qubit count, and baseline framework.
 Even against PennyLane's GPU-accelerated \texttt{lightning.gpu}, QDP achieves 7--24$\times$ lower latency by bypassing circuit simulation entirely.
 In end-to-end QML training on SVHN, QDP's one-shot encoding reduces training time by 1.26--1.50$\times$ while producing identical accuracy.
-QDP is open source as part of Apache Mahout and is available on PyPI, providing a Python API compatible with PyTorch through zero-copy DLPack tensors.
 
 %% ============================================================
 %% 2. DESIGN AND IMPLEMENTATION
@@ -321,7 +329,7 @@ In the first scenario (\autoref{fig:demo}a), attendees explore the end-to-end en
 A sidebar provides global configuration: encoding method (amplitude, angle, basis, IQP), qubit count (2--20), batch size (1--256), and number of batches (10--500).
 The main panel displays the pipeline architecture diagram alongside a workload summary showing the state vector dimension ($2^n$), total number of vectors, and estimated data size in GB.
 Clicking ``Run Encode'' triggers a real-time encoding pass through the QDP engine.
-An animated pipeline visualization appears below the button, sequentially highlighting each stage (Read Data, Normalize, GPU Encode, DLPack) to illustrate the data flow.
+An animated pipeline visualization appears below the button, sequentially highlighting each stage to illustrate the data flow.
 The measured per-vector latency and aggregate throughput are displayed upon completion.
 Attendees can freely adjust parameters and re-run, observing how encoding cost changes with qubit count, encoding method, and batch configuration.
 
@@ -329,9 +337,8 @@ Attendees can freely adjust parameters and re-run, observing how encoding cost c
 
 The second scenario (\autoref{fig:demo}b) visually explains \emph{why} QDP is faster than existing frameworks.
 Two side-by-side cards contrast the gate simulation approach used by PennyLane and Qiskit with QDP's fused CUDA kernel.
-The upper card (Gate Simulation) displays each quantum gate as a colored pill: RY gates for rotation, CNOT gates for entanglement, and a final normalization step.
-Gates appear sequentially via CSS animation, emphasizing the per-gate overhead.
-The lower card (Fused CUDA Kernel) shows QDP's four-stage pipeline (pinned copy, DMA transfer, CUDA kernel, DLPack), where a single kernel launch computes all $2^n$ amplitudes in parallel.
+The upper card (Gate Simulation) displays each quantum gate sequentially, emphasizing the per-gate overhead.
+The lower card (Fused CUDA Kernel) shows QDP's four-stage pipeline, where a single kernel launch computes all $2^n$ amplitudes in parallel.
 A summary bar at the bottom highlights the contrast: for 12-qubit amplitude encoding, gate simulation requires 24 sequential operations while QDP uses a single kernel launch, achieving 13$\times$ speedup.
 Changing the qubit count or encoding method in the sidebar dynamically updates the gate list, operation count, and speedup ratio, allowing attendees to explore how circuit complexity grows with qubit count.
 
@@ -350,7 +357,7 @@ QDP's advantage is consistent across all methods, ranging from 7--24$\times$ ove
 We demonstrated Apache Mahout QDP, a GPU-accelerated quantum data pipeline that addresses the data loading bottleneck in QML pipelines.
 By implementing the full path from columnar storage to GPU-resident quantum states in Rust and CUDA, QDP achieves 7--1{,}000$\times$ speedup over CPU-based backends and 7--24$\times$ over PennyLane's GPU-accelerated \texttt{lightning.gpu}, depending on encoding method and qubit count.
 Beyond raw encoding speed, QDP's one-shot encoding decouples state preparation from circuit execution, eliminating per-iteration gate overhead and improving end-to-end training time by 1.26--1.50$\times$.
-Key engineering contributions include dual-stream pipelining, a pinned buffer pool with RAII-based lifecycle management, and zero-copy DLPack interop with PyTorch.
+While QDP targets quantum state encoding, its core architecture, columnar ingestion, fused GPU kernels, and zero-copy tensor output, is a general pattern applicable to other GPU-accelerated data transformation workloads.
 Future directions include multi-GPU distribution, AMD ROCm support, and integration with quantum hardware backends.
 
 %% ============================================================
