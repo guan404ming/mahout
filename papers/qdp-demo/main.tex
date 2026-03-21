@@ -34,6 +34,7 @@
 \title{Apache Mahout QDP: GPU-Accelerated Quantum Data Plane}
 
 \author{Guan-Ming Chiu}
+\authornote{Equal contribution}
 \affiliation{%
   \institution{National Taiwan University}
   \city{Taipei}
@@ -41,14 +42,31 @@
 }
 \email{gmchiu@arbor.ee.ntu.edu.tw}
 
-% Add more authors here
-% \author{Name}
-% \affiliation{%
-%   \institution{Institution}
-%   \city{City}
-%   \country{Country}
-% }
-% \email{email@example.com}
+\author{Kuan-Hao Huang}
+\authornotemark[1]
+\affiliation{%
+  \institution{National Taichung University of Education}
+  \country{Taiwan}
+}
+\email{richhuang@apache.org}
+
+\author{Hsien-Cheng Huang}
+\authornotemark[1]
+\affiliation{%
+  \institution{National Yang Ming Chiao Tung University}
+  \city{Hsinchu}
+  \country{Taiwan}
+}
+\email{hcr@apache.org}
+
+\author{Jie-Kai Chang}
+\authornotemark[1]
+\affiliation{%
+  \institution{Yuan Ze University}
+  \city{Taipei}
+  \country{Taiwan}
+}
+\email{jiekaichang@apache.org}
 
 %%
 %% Abstract
@@ -97,6 +115,7 @@ The source code, data, and/or other artifacts have been made available at \url{\
   \includegraphics[width=\linewidth]{figures/architecture}
   \caption{QDP pipeline architecture. Classical data flows from columnar storage through Rust-based readers and preprocessing into CUDA-accelerated encoding kernels, producing GPU-resident quantum state tensors via DLPack.}
   \label{fig:architecture}
+  \vspace{-0.3cm}
 \end{figure}
 
 \section{Introduction}
@@ -327,17 +346,10 @@ QDP's advantage is consistent across all methods, ranging from 7--24$\times$ ove
 \section{Conclusion}
 
 We demonstrated Apache Mahout QDP, a GPU-accelerated quantum data pipeline that addresses the data loading bottleneck in QML pipelines.
-By implementing the full path from columnar storage to GPU-resident quantum states in Rust and CUDA, Apache Mahout QDP achieves 24$\times$ speedup over PennyLane's GPU-accelerated \texttt{lightning.gpu} backend at 20 qubits, and 7--1{,}000$\times$ over CPU-based backends depending on encoding method.
-Beyond raw encoding speed, QDP's one-shot encoding decouples state preparation from circuit execution, eliminating per-iteration gate overhead and consistently improving end-to-end training time.
-Key engineering contributions include dual-stream pipelining for overlapping host-to-device transfers with GPU encoding, a pinned buffer pool with RAII-based lifecycle management, and zero-copy DLPack interop with PyTorch.
-
-QDP is open source as part of Apache Mahout and supports cloud-native workflows through streaming Parquet ingestion from S3 and GCS.
-Future directions include:
-(1)~multi-GPU encoding with NCCL-based distribution;
-(2)~AMD ROCm/HIP backend for vendor-neutral acceleration;
-(3)~broader cloud storage and data lake format support;
-(4)~parameterized circuit encoding; and
-(5)~integration with quantum hardware backends for NISQ devices.
+By implementing the full path from columnar storage to GPU-resident quantum states in Rust and CUDA, QDP achieves 7--1{,}000$\times$ speedup over CPU-based backends and 7--24$\times$ over PennyLane's GPU-accelerated \texttt{lightning.gpu}, depending on encoding method and qubit count.
+Beyond raw encoding speed, QDP's one-shot encoding decouples state preparation from circuit execution, eliminating per-iteration gate overhead and improving end-to-end training time by 1.26--1.50$\times$.
+Key engineering contributions include dual-stream pipelining, a pinned buffer pool with RAII-based lifecycle management, and zero-copy DLPack interop with PyTorch.
+Future directions include multi-GPU distribution, AMD ROCm support, and integration with quantum hardware backends.
 
 %% ============================================================
 %% ACKNOWLEDGMENTS & REFERENCES
