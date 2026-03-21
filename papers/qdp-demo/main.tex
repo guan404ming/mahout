@@ -126,7 +126,8 @@ A critical step in every QML pipeline is \emph{quantum data encoding}: transform
 Common encoding strategies include amplitude encoding, angle encoding, basis encoding, and IQP-style encoding~\cite{schuld2021}.
 
 In current practice, frameworks such as PennyLane~\cite{pennylane} and Qiskit~\cite{qiskit} implement encoding by constructing and simulating a quantum circuit for each input vector.
-Even with GPU-accelerated backends (e.g., Lightning.GPU, Aer GPU), the encoding step remains sequential and per-vector, creating a bottleneck that grows with qubit count.
+Even with GPU-accelerated backends (e.g., Lightning.GPU, Aer GPU) that leverage high-performance SDKs like NVIDIA cuQuantum~\cite{cuquantum2023}, the encoding step remains sequential and per-vector, creating a bottleneck that grows with qubit count.
+While cuQuantum dramatically accelerates the underlying circuit simulation, a system-level pipeline is still required at the data loading layer to resolve this bottleneck before simulation can even begin.
 For a 16-qubit system, each state vector has $2^{16} = 65{,}536$ complex amplitudes; encoding thousands of training samples at this scale can take minutes with existing tools, while the subsequent quantum circuit simulation on GPU completes in seconds.
 This \emph{data starvation} problem, where the GPU sits idle waiting for encoded data, is analogous to the classical ML data loading bottleneck that motivated systems like PyTorch DataLoader~\cite{pytorch}, but has received almost no attention in the quantum computing community.
 
