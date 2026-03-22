@@ -87,7 +87,7 @@ This problem is especially severe in quantum machine learning (QML), where class
 Existing frameworks such as PennyLane and Qiskit construct encoding circuits on the CPU, one vector at a time, creating a severe data loading bottleneck that dominates end-to-end training time.
 We demonstrate \textbf{Apache Mahout QDP} (Quantum Data Plane), a GPU-accelerated data pipeline engine built with Rust and CUDA.
 QDP provides a complete pipeline from columnar storage formats (Parquet, Arrow) through normalization and quantum state encoding to zero-copy tensor output via DLPack, achieving orders-of-magnitude speedups over existing frameworks.
-Our interactive demonstration allows users to (1)~explore the end-to-end encoding pipeline with configurable parameters, (2)~compare latency and throughput against PennyLane and Qiskit in real time, and (3)~analyze performance scaling across qubit counts.
+Our interactive demonstration allows users to (1)~explore the end-to-end encoding pipeline with configurable parameters, (2)~visualize why fused GPU kernels outperform gate-by-gate circuit simulation, and (3)~compare latency scaling across frameworks in real time.
 \end{abstract}
 
 \maketitle
