@@ -577,7 +577,7 @@ def main():
     )
 
     st.html(
-        '<h1 style="font-size:30px;white-space:nowrap;margin:0;padding:16px 0 0">Apache Mahout QDP: GPU-Accelerated Quantum Data Processing</h1>'
+        '<h1 style="font-size:30px;white-space:nowrap;margin:0;padding:16px 0 0">Apache Mahout QDP: GPU-Accelerated Quantum Data Plane</h1>'
     )
     st.caption("Rust + CUDA | Zero-Copy DLPack Interop")
 
